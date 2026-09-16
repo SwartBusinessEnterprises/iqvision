@@ -24,5 +24,5 @@ are remembered in the browser and reset with "Reset layout".
 The strip at the bottom holds keyframes. "+ Frame" copies the current frame
 (players and drawings) as a new frame after it; edits always save into the
 frame that is showing. Click a tab, use ◀ ▶ or the [ and ] keys to switch,
-Rename or double-click a tab to name it, Delete removes it, and Play glides
+Rename or double-click a tab to name it, Delete removes it, and Play (or the Space key while walking) glides
 the players from frame to frame in 3D.

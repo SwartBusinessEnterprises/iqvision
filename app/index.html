@@ -48,7 +48,7 @@
   .sw.on{border-color:#fff;box-shadow:0 0 0 2px var(--navy)}
   body:not(.board) #tools,body:not(.board) #board{display:none}
   body.board .hud,body.board #hint,body.board #mini,body.board #stage{display:none}
-  body.walk #frames{display:none}
+  body.walk #frames{opacity:.92}
   #frames{position:fixed;left:50%;bottom:calc(14px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:6;
           display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:center;max-width:calc(100vw - 32px);
           background:var(--panel);border:1px solid var(--edge);backdrop-filter:blur(8px);border-radius:6px;padding:6px 8px}
@@ -84,6 +84,7 @@
     <b>1 – 9</b><span>jump to a player</span>
     <b>T</b><span>open the tactics board</span>
     <b>[ ]</b><span>previous / next frame</span>
+    <b>SPACE</b><span>play / stop the frames</span>
   </div>
   <div class="legend">
     <span><i style="background:#d62828"></i>Spain</span><span><i style="background:#fff"></i>Opponent</span>
@@ -343,6 +344,8 @@
     if (mode !== "board" && /^Digit[1-9]$/.test(e.code)){ const ks = Object.keys(positions).filter(k => k !== "BALL"); const k = ks[+e.code.slice(5) - 1]; if (k){ const p = positions[k]; dropIn(p[0] - 2.5, p[1] + 1.5); showInfo(k); } }
     if (e.code === "KeyT" && mode !== "board") openBoard();
     if (e.code === "BracketLeft") showFrame(cur - 1); if (e.code === "BracketRight") showFrame(cur + 1);
+    if (e.code === "Space" && mode !== "board"){ e.preventDefault(); anim ? stop() : play(); }
+    if (e.code === "Home") showFrame(0); if (e.code === "End") showFrame(frames.length - 1);
     if (mode === "board"){ if (e.code === "Delete" || e.code === "Backspace") deleteSelected(); if ((e.ctrlKey || e.metaKey) && e.code === "KeyZ") undo(); if (e.code === "Escape") { selected = null; drawBoard(); } } });
   addEventListener("keyup", e => keys[e.code] = false);
   document.getElementById("enter").onclick = () => { const b = focus(); dropIn(b[0] - 8, b[1] - 4); };
@@ -452,7 +455,7 @@
     frames.forEach((f, i) => { const b = document.createElement("button"); b.className = "tab" + (i === cur ? " on" : ""); b.textContent = f.name; b.title = "Show " + f.name;
       b.onclick = () => showFrame(i); b.ondblclick = () => renameFrame(); tabs.appendChild(b); });
   }
-  function showFrame(i){ if (anim) return; useFrame(i); selected = null; if (mode === "board") drawBoard(); else build(); renderStrip(); save(); }
+  function showFrame(i){ if (anim) return; useFrame(i); selected = null; if (mode === "board") drawBoard(); else { build(); idleHint(); } renderStrip(); save(); }
   document.getElementById("fPrev").onclick = () => showFrame(cur - 1);
   document.getElementById("fNext").onclick = () => showFrame(cur + 1);
   document.getElementById("fAdd").onclick = () => { // duplicate the current frame right after it
@@ -465,15 +468,19 @@
   document.getElementById("fRename").onclick = renameFrame;
   // playback: glide the players from frame to frame in 3D
   let anim = null;
+  const playBtn = document.getElementById("fPlay");
+  const idleHint = () => hint((mode === "walk" ? "W A S D to move · mouse to look · " : "Click the pitch to walk · ") + `${frames[cur].name} (${cur + 1}/${frames.length}) · Space plays · [ ] steps`);
   function play(){ if (anim || frames.length < 2) return; if (mode === "board"){ build(); setOverview(); }
-    if (cur === frames.length - 1){ useFrame(0); build(); renderStrip(); } hint("Playing frames…"); glide(cur); }
-  function glide(i){ if (i + 1 >= frames.length){ anim = null; hint(mode === "walk" ? "W A S D to move · mouse to look" : "Click anywhere on the pitch to start walking"); save(); return; }
-    anim = {from: copy(frames[i].positions), to: frames[i + 1].positions, t0: performance.now(), dur: 1500, next: i + 1}; }
+    if (cur === frames.length - 1){ useFrame(0); build(); renderStrip(); } playBtn.textContent = "Stop"; glide(cur); }
+  function stop(){ if (!anim) return; const n = anim.next; anim = null; useFrame(n); build(); renderStrip(); playBtn.textContent = "Play"; idleHint(); save(); }
+  function glide(i){ if (i + 1 >= frames.length){ anim = null; playBtn.textContent = "Play"; idleHint(); save(); return; }
+    anim = {from: copy(frames[i].positions), to: frames[i + 1].positions, t0: performance.now(), dur: 1500, next: i + 1};
+    hint(`Playing ${frames[i].name} → ${frames[i + 1].name} · Space stops`); }
   function tick(){ if (!anim) return; const t = Math.min(1, (performance.now() - anim.t0) / anim.dur), e = t < .5 ? 2*t*t : 1 - Math.pow(-2*t + 2, 2) / 2;
     people.children.forEach(o => { const k = o.userData.key === "BALL_HALO" ? "BALL" : o.userData.key; const a = anim.from[k], b = anim.to[k]; if (!a || !b) return;
       const v = toWorld(a[0] + (b[0] - a[0]) * e, a[1] + (b[1] - a[1]) * e); o.position.x = v.x; o.position.z = v.z; });
     if (t >= 1){ const n = anim.next; anim = null; useFrame(n); build(); renderStrip(); setTimeout(() => { if (mode !== "board" && !anim) glide(n); }, 700); } }
-  document.getElementById("fPlay").onclick = play;
+  playBtn.onclick = () => anim ? stop() : play();
   renderStrip();
 
   // ---------------------------------------------------------------- 3D loop
