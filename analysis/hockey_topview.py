@@ -154,7 +154,7 @@ def draw_pitch(ax):
 
 fig, ax = plt.subplots(figsize=(15, 9.6))
 draw_pitch(ax)
-ax.set_xlim(-6, L + 6); ax.set_ylim(WID + 5, -5)   # invert Y: far sideline at top, like the photo
+ax.set_xlim(-6, L + 6); ax.set_ylim(WID + 7, -5)   # invert Y: far sideline at top, like the photo
 ax.set_aspect("equal"); ax.axis("off")
 ax.text(L / 2, -2.2, "FAR sideline (spectator stand in the photo)", ha="center", color="white", fontsize=10)
 ax.text(L / 2, WID + 2.8, "NEAR sideline (camera side)", ha="center", color="white", fontsize=10)
@@ -163,7 +163,7 @@ style = {"R": ("#d62828", "white"), "W": ("white", "black")}
 for k, (x, y) in pos.items():
     if k == "BALL":
         ax.add_patch(Circle((x, y), 0.7, fc="white", ec="black", lw=1.2, zorder=9))
-        ax.annotate("ball (inferred)", (x, y), (x + 4, y + 2.5), color="white", fontsize=9,
+        ax.annotate("ball (inferred)", (x, y), (x - 14, y - 7), color="white", fontsize=9,
                     arrowprops=dict(arrowstyle="-", color="white"), zorder=6)
     elif k == "GK":
         ax.add_patch(Circle((x, y), 1.4, fc="#2ecc71", ec="black", lw=1.5, zorder=6))
@@ -180,7 +180,7 @@ cam = (L - prm[0], prm[1])
 ax.plot(cam[0], min(cam[1], WID + 4.2), marker=(3, 0, 180), ms=14, color="yellow", zorder=6)
 ax.text(cam[0], min(cam[1], WID + 4.2) - 1.7, "camera", ha="center", color="yellow", fontsize=9)
 
-ax.text(1, WID + 4.6, "Red = ESP (red shirts)   White = opponents   GK = goalkeeper   U = umpire   "
+ax.text(1, WID + 6.2, "Red = ESP (red shirts)   White = opponents   GK = goalkeeper   U = umpire   "
         "Positions estimated from one photo (approx. ±3 m)", color="white", fontsize=9)
 fig.patch.set_facecolor("#1e5bb8")
 plt.tight_layout()
