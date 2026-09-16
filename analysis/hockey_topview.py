@@ -115,9 +115,11 @@ print("camera X=%.1f Y=%.1f Z=%.1f  az=%.1f deg  tilt=%.1f deg  f=%.0f px  (rms 
       (prm[0], prm[1], prm[2], np.degrees(prm[3]), np.degrees(prm[4]), prm[5],
        np.sqrt(np.mean(np.square(fit.fun)))))
 
-pos = {k: back_project(v, prm) for k, v in players.items()}
+# The goal in the photo is the RIGHT-hand goal of the drawn pitch, so mirror
+# the along-pitch coordinate (the camera sits at the left end of the near stand).
+pos = {k: (L - back_project(v, prm)[0], back_project(v, prm)[1]) for k, v in players.items()}
 for k, (x, y) in pos.items():
-    print("%-4s  X=%5.1f m from goal line   Y=%5.1f m from far sideline" % (k, x, y))
+    print("%-4s  X=%5.1f m from left goal line   Y=%5.1f m from far sideline" % (k, x, y))
 json.dump({"camera": {"X": prm[0], "Y": prm[1], "Z": prm[2], "azimuth_deg": np.degrees(prm[3]),
                       "tilt_deg": np.degrees(prm[4]), "focal_px": prm[5]},
            "positions_m": pos, "pixels": players},
@@ -174,7 +176,7 @@ for k, (x, y) in pos.items():
         ax.add_patch(Circle((x, y), 1.2, fc=fc, ec="black", lw=1.5, zorder=6 + (1 if k[0]=="R" else 0)))
         ax.text(x, y, k, ha="center", va="center", fontsize=7, color=tc, weight="bold", zorder=8)
 
-cam = prm[:2]
+cam = (L - prm[0], prm[1])
 ax.plot(cam[0], min(cam[1], WID + 4.2), marker=(3, 0, 180), ms=14, color="yellow", zorder=6)
 ax.text(cam[0], min(cam[1], WID + 4.2) - 1.7, "camera", ha="center", color="yellow", fontsize=9)
 
