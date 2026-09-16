@@ -4,20 +4,23 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500&display=swap">
 <style>
   :root{
-    --astro:#1d5fbf; --astro-deep:#0f3d8a; --line:#ffffff; --navy:#0b1a33; --navy-2:#122a52;
-    --ink:#f3f6fb; --ink-dim:#aab8d3; --amber:#ffb000; --red:#d62828; --white:#ffffff; --green:#2ecc71;
-    --panel:rgba(11,26,51,.82); --edge:rgba(255,255,255,.14);
+    --astro:#1d5fbf; --astro-deep:#0f3d8a; --navy:#0b1a33; --navy-2:#122a52;
+    --ink:#f3f6fb; --ink-dim:#aab8d3; --amber:#ffb000;
+    --panel:rgba(11,26,51,.86); --edge:rgba(255,255,255,.14);
     --display:"Barlow Condensed","Arial Narrow",sans-serif; --body:"Barlow","Helvetica Neue",Arial,sans-serif;
   }
   html,body{height:100%;margin:0;background:var(--navy);color:var(--ink);font-family:var(--body);overflow:hidden}
-  #stage{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:crosshair}
+  #stage,#board{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+  #stage{cursor:crosshair}
+  #board{background:#0b1a33;cursor:default;z-index:3}
   .hud{position:fixed;left:16px;top:calc(16px + env(safe-area-inset-top,0px));width:min(320px,calc(100vw - 32px));
        background:var(--panel);border:1px solid var(--edge);backdrop-filter:blur(8px);border-radius:6px;padding:14px 16px;z-index:5}
   .hud h1{font-family:var(--display);font-weight:700;font-size:26px;letter-spacing:.02em;margin:0 0 2px;line-height:1;text-transform:uppercase}
   .hud .sub{color:var(--ink-dim);font-size:13px;margin:0 0 10px}
   .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
-  button,label.btn{font:500 13px var(--body);color:var(--ink);background:var(--navy-2);border:1px solid var(--edge);border-radius:4px;padding:7px 11px;cursor:pointer}
-  button.primary{background:var(--amber);color:#1a1200;border-color:transparent;font-weight:500}
+  button,label.btn{font:500 13px var(--body);color:var(--ink);background:var(--navy-2);border:1px solid var(--edge);border-radius:4px;padding:7px 11px;cursor:pointer;line-height:1.2}
+  button.primary{background:var(--amber);color:#1a1200;border-color:transparent}
+  button.on{background:var(--amber);color:#1a1200;border-color:transparent}
   button:focus-visible,label.btn:focus-within{outline:2px solid var(--amber);outline-offset:2px}
   #file{position:absolute;width:1px;height:1px;opacity:0}
   .keys{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;font-size:12.5px;color:var(--ink-dim);margin-top:10px}
@@ -33,13 +36,28 @@
   body.walk #cross{display:block}
   .legend{display:flex;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--ink-dim);margin-top:8px}
   .legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px;vertical-align:-1px;border:1px solid rgba(0,0,0,.4)}
-  @media (max-width:520px){.hud{padding:10px 12px}.hud h1{font-size:22px}.keys{display:none}#hint{font-size:12px}}
+  /* tactics board toolbar */
+  #tools{position:fixed;left:50%;top:calc(12px + env(safe-area-inset-top,0px));transform:translateX(-50%);z-index:6;
+         display:flex;gap:6px;flex-wrap:wrap;justify-content:center;align-items:center;max-width:calc(100vw - 24px);
+         background:var(--panel);border:1px solid var(--edge);backdrop-filter:blur(8px);border-radius:6px;padding:8px 10px}
+  #tools .grp{display:flex;gap:4px;align-items:center;padding:0 6px;border-right:1px solid var(--edge)}
+  #tools .grp:last-child{border-right:0}
+  #tools .lbl{font-family:var(--display);font-size:12px;letter-spacing:.08em;color:var(--ink-dim);text-transform:uppercase;margin-right:2px}
+  #tools button{padding:6px 9px}
+  .sw{width:22px;height:22px;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0}
+  .sw.on{border-color:#fff;box-shadow:0 0 0 2px var(--navy)}
+  body:not(.board) #tools,body:not(.board) #board{display:none}
+  body.board .hud,body.board #hint,body.board #mini,body.board #stage{display:none}
+  #textbox{position:fixed;z-index:7;display:none;font:600 16px var(--display);padding:4px 6px;border:1px solid var(--amber);border-radius:3px;background:#fff;color:#111;min-width:120px}
+  @media (max-width:520px){.hud{padding:10px 12px}.hud h1{font-size:22px}.keys{display:none}#hint{font-size:12px}#tools{padding:6px}#tools .lbl{display:none}}
   @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head><body>
 
 <canvas id="stage"></canvas>
+<canvas id="board"></canvas>
 <div id="cross"></div>
+<input id="textbox" type="text" placeholder="type, then Enter" aria-label="label text">
 
 <div class="hud">
   <h1>Astro Walk</h1>
@@ -47,6 +65,7 @@
   <div class="row">
     <button id="enter" class="primary">Walk on the astro</button>
     <button id="overview">Overview</button>
+    <button id="toBoard">Tactics board</button>
     <label class="btn" for="file">Load positions</label>
     <input id="file" type="file" accept="application/json">
   </div>
@@ -54,13 +73,37 @@
     <b>CLICK</b><span>on the astro to drop in at that spot</span>
     <b>W A S D</b><span>move · mouse looks · Shift runs</span>
     <b>1 – 9</b><span>jump to a player</span>
-    <b>ESC</b><span>release the mouse</span>
+    <b>T</b><span>open the tactics board</span>
   </div>
   <div class="legend">
     <span><i style="background:#d62828"></i>Spain</span><span><i style="background:#fff"></i>Opponent</span>
     <span><i style="background:#2ecc71"></i>Keeper</span><span><i style="background:#222"></i>Umpire</span><span><i style="background:#ffb000"></i>You</span>
   </div>
   <div id="info"></div>
+</div>
+
+<div id="tools">
+  <div class="grp"><button id="back3d" class="primary">Back to 3D</button></div>
+  <div class="grp"><span class="lbl">Tool</span>
+    <button data-tool="move" class="on" title="Drag players and shapes">Move</button>
+    <button data-tool="line">Line</button>
+    <button data-tool="arrow">Arrow</button>
+    <button data-tool="circle">Circle</button>
+    <button data-tool="pen">Pen</button>
+    <button data-tool="text">Text</button>
+  </div>
+  <div class="grp"><span class="lbl">Colour</span>
+    <button class="sw on" data-color="#ffb000" style="background:#ffb000" title="Amber"></button>
+    <button class="sw" data-color="#ffffff" style="background:#ffffff" title="White"></button>
+    <button class="sw" data-color="#d62828" style="background:#d62828" title="Red"></button>
+    <button class="sw" data-color="#111111" style="background:#111111" title="Black"></button>
+    <button class="sw" data-color="#22d3ee" style="background:#22d3ee" title="Cyan"></button>
+    <button id="dash" title="Dashed line">Dashed</button>
+  </div>
+  <div class="grp"><span class="lbl">Players</span>
+    <button id="addR">+ Red</button><button id="addW">+ White</button><button id="del">Delete</button>
+  </div>
+  <div class="grp"><button id="undo">Undo</button><button id="clear">Clear drawing</button><button id="reset">Reset layout</button></div>
 </div>
 
 <div id="hint">Click anywhere on the pitch to start walking</div>
@@ -72,12 +115,20 @@
   // ---------------------------------------------------------------- data
   const L = 91.4, W = 55, GOAL_W = 3.66, GOAL_D = 1.22, GOAL_H = 2.14, R_D = 14.63, R_DOT = 19.63, L23 = 22.9, PEN = 6.4;
   // X = metres from the left goal line, Y = metres from the far sideline (top of the top view)
-  let positions = {"R1":[87.0,37.0],"R2":[86.2,42.7],"R3":[80.1,46.7],"R4":[83.9,49.1],"R5":[86.3,24.6],
+  const DEFAULT = {"R1":[87.0,37.0],"R2":[86.2,42.7],"R3":[80.1,46.7],"R4":[83.9,49.1],"R5":[86.3,24.6],
                    "W1":[87.5,37.7],"W2":[77.9,50.2],"W3":[85.2,50.8],"W4":[69.4,43.6],
                    "GK":[91.0,27.4],"UMP":[91.9,41.2],"BALL":[79.2,48.3]};
-  const NAMES = {R:"Spain", W:"Opponent", GK:"Goalkeeper", UMP:"Umpire", BALL:"Ball"};
+  let positions = JSON.parse(JSON.stringify(DEFAULT));
+  let drawings = [];   // {type:'line'|'arrow'|'circle'|'pen'|'text', pts:[[X,Y],..], color, dashed, text}
+  const NAMES = {R:"Spain", W:"Opponent"};
+  const who = k => k === "BALL" ? "Ball" : k === "GK" ? "Goalkeeper" : k === "UMP" ? "Umpire" : `${NAMES[k[0]]} · ${k}`;
+  const colorOf = k => k === "BALL" ? "#ffffff" : k === "GK" ? "#2ecc71" : k === "UMP" ? "#222222" : k[0] === "R" ? "#d62828" : "#ffffff";
 
-  // ---------------------------------------------------------------- pitch texture (shared with the minimap)
+  // remembered per viewer (convenience only)
+  try { const s = JSON.parse(localStorage.getItem("astro-walk-v1") || "null"); if (s && s.positions) { positions = s.positions; drawings = s.drawings || []; } } catch (e) {}
+  function save(){ try { localStorage.setItem("astro-walk-v1", JSON.stringify({positions, drawings})); } catch (e) {} }
+
+  // ---------------------------------------------------------------- pitch + drawing renderers (shared by texture, minimap, board)
   function drawPitch(ctx, w, h, pad){
     const sx = (w - 2*pad) / L, sy = (h - 2*pad) / W;
     const X = x => pad + x*sx, Y = y => pad + y*sy;
@@ -90,16 +141,51 @@
       [[R_D,false],[R_DOT,true]].forEach(([r,dot]) => {
         ctx.setLineDash(dot ? [w/120, w/120] : []);
         ctx.beginPath();
-        // arc around the far post, straight section, arc around the near post
         ctx.ellipse(X(x0), Y(pf), r*sx, r*sy, 0, -Math.PI/2, s>0?0:Math.PI, s<0);
         ctx.lineTo(X(x0+s*r), Y(pn));
         ctx.ellipse(X(x0), Y(pn), r*sx, r*sy, 0, s>0?0:Math.PI, Math.PI/2, s<0);
         ctx.stroke(); ctx.setLineDash([]);
       });
       ctx.beginPath(); ctx.arc(X(x0+s*PEN), Y(yc), w/260, 0, 7); ctx.fillStyle="#fff"; ctx.fill();
+      // goal boxes behind the backline
+      ctx.fillStyle = "rgba(255,255,255,.55)"; ctx.fillRect(X(x0 - (s>0 ? GOAL_D : 0)), Y(pf), GOAL_D*sx, GOAL_W*sy);
     });
     ctx.beginPath(); ctx.arc(X(L/2), Y(W/2), w/400, 0, 7); ctx.fill();
-    return {X, Y};
+    return {X, Y, sx, sy};
+  }
+  function drawShapes(ctx, m, list, scale){
+    const {X, Y, sx} = m; const lw = Math.max(1.5, 0.28 * sx); // ~28 cm wide on the astro
+    ctx.lineCap = "round"; ctx.lineJoin = "round";
+    list.forEach(d => {
+      ctx.strokeStyle = d.color; ctx.fillStyle = d.color; ctx.lineWidth = lw; ctx.setLineDash(d.dashed ? [lw*3, lw*2.5] : []);
+      const p = d.pts;
+      if (d.type === "line" || d.type === "arrow"){
+        if (p.length < 2) return;
+        const [a, b] = [p[0], p[1]]; const ax = X(a[0]), ay = Y(a[1]), bx = X(b[0]), by = Y(b[1]);
+        const ang = Math.atan2(by - ay, bx - ax), head = lw * 4.5;
+        const ex = d.type === "arrow" ? bx - Math.cos(ang) * head * .8 : bx, ey = d.type === "arrow" ? by - Math.sin(ang) * head * .8 : by;
+        ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ex, ey); ctx.stroke();
+        if (d.type === "arrow"){ ctx.setLineDash([]); ctx.beginPath(); ctx.moveTo(bx, by);
+          ctx.lineTo(bx - Math.cos(ang - 0.45) * head, by - Math.sin(ang - 0.45) * head); ctx.lineTo(bx - Math.cos(ang + 0.45) * head, by - Math.sin(ang + 0.45) * head); ctx.closePath(); ctx.fill(); }
+      } else if (d.type === "circle"){
+        if (p.length < 2) return; const [a, b] = p; const rx = Math.abs(X(b[0]) - X(a[0])), ry = Math.abs(Y(b[1]) - Y(a[1]));
+        ctx.beginPath(); ctx.ellipse((X(a[0]) + X(b[0]))/2, (Y(a[1]) + Y(b[1]))/2, rx/2, ry/2, 0, 0, 7); ctx.stroke();
+      } else if (d.type === "pen"){
+        if (p.length < 2) return; ctx.beginPath(); ctx.moveTo(X(p[0][0]), Y(p[0][1])); p.slice(1).forEach(q => ctx.lineTo(X(q[0]), Y(q[1]))); ctx.stroke();
+      } else if (d.type === "text"){
+        ctx.setLineDash([]); ctx.font = `700 ${Math.max(10, 1.6 * sx)}px 'Barlow Condensed','Arial Narrow',sans-serif`; ctx.textBaseline = "middle"; ctx.textAlign = "center";
+        ctx.lineWidth = lw * 1.2; ctx.strokeStyle = "rgba(0,0,0,.65)"; ctx.strokeText(d.text, X(p[0][0]), Y(p[0][1])); ctx.fillText(d.text, X(p[0][0]), Y(p[0][1]));
+      }
+    });
+    ctx.setLineDash([]);
+  }
+  function drawMarkers(ctx, m, r, selectedKey){
+    const {X, Y} = m;
+    Object.entries(positions).forEach(([k, [x, y]]) => {
+      const isBall = k === "BALL"; ctx.beginPath(); ctx.arc(X(x), Y(y), isBall ? r * .45 : r, 0, 7);
+      ctx.fillStyle = colorOf(k); ctx.fill(); ctx.lineWidth = k === selectedKey ? 3 : 1.5; ctx.strokeStyle = k === selectedKey ? "#ffb000" : "#000"; ctx.stroke();
+      if (!isBall && r > 8){ ctx.fillStyle = (k[0] === "W" && k !== "GK") ? "#111" : "#fff"; ctx.font = `700 ${r * 1.05}px 'Barlow Condensed','Arial Narrow',sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(k === "UMP" ? "U" : k, X(x), Y(y) + 1); }
+    });
   }
 
   // ---------------------------------------------------------------- three.js scene
@@ -111,47 +197,43 @@
   scene.background = new THREE.Color(0x9fc5ec);
   scene.fog = new THREE.Fog(0x9fc5ec, 160, 420);
   const camera = new THREE.PerspectiveCamera(70, 1, 0.1, 800);
-
-  const hemi = new THREE.HemisphereLight(0xdfeeff, 0x1d5fbf, 0.9); scene.add(hemi);
+  scene.add(new THREE.HemisphereLight(0xdfeeff, 0x1d5fbf, 0.9));
   const sun = new THREE.DirectionalLight(0xfff4e0, 1.1); sun.position.set(-60, 90, 40); sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
   Object.assign(sun.shadow.camera, {left:-80, right:80, top:60, bottom:-60, near:10, far:250}); scene.add(sun);
 
-  // pitch plane: world x = X - L/2, world z = Y - W/2, y up
-  const tex = (() => { const c = document.createElement("canvas"); c.width = 2048; c.height = 1260;
-    drawPitch(c.getContext("2d"), c.width, c.height, 60); const t = new THREE.CanvasTexture(c); t.anisotropy = 8; return t; })();
-  // the texture carries a 60 px run-off on each side; size the plane so the lines land at true scale
-  const planeW = L * 2048 / (2048 - 120), planeH = W * 1260 / (1260 - 120), runoff = (planeW - L) / 2;
+  const TW = 2048, TH = 1260, TP = 60;
+  const pitchCanvas = document.createElement("canvas"); pitchCanvas.width = TW; pitchCanvas.height = TH;
+  const texMap = drawPitch(pitchCanvas.getContext("2d"), TW, TH, TP);
+  const tex = new THREE.CanvasTexture(pitchCanvas); tex.anisotropy = 8;
+  const planeW = L * TW / (TW - 2*TP), planeH = W * TH / (TH - 2*TP), runoff = (planeW - L) / 2;
   const pitch = new THREE.Mesh(new THREE.PlaneGeometry(planeW, planeH), new THREE.MeshLambertMaterial({map: tex}));
   pitch.rotation.x = -Math.PI/2; pitch.receiveShadow = true; scene.add(pitch);
+  // drawings live on a transparent layer just above the astro
+  const inkCanvas = document.createElement("canvas"); inkCanvas.width = TW; inkCanvas.height = TH;
+  const inkTex = new THREE.CanvasTexture(inkCanvas); inkTex.anisotropy = 8;
+  const ink = new THREE.Mesh(new THREE.PlaneGeometry(planeW, planeH), new THREE.MeshBasicMaterial({map: inkTex, transparent: true, depthWrite: false}));
+  ink.rotation.x = -Math.PI/2; ink.position.y = 0.015; scene.add(ink);
+  function refreshInk(){ const c = inkCanvas.getContext("2d"); c.clearRect(0, 0, TW, TH); drawShapes(c, texMap, drawings); inkTex.needsUpdate = true; }
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(1200, 1200), new THREE.MeshLambertMaterial({color: 0x30703a}));
   ground.rotation.x = -Math.PI/2; ground.position.y = -0.02; ground.receiveShadow = true; scene.add(ground);
 
   const toWorld = (X, Y) => new THREE.Vector3(X - L/2, 0, Y - W/2);
   const fromWorld = v => [v.x + L/2, v.z + W/2];
 
-  // perimeter boards + a simple stand on the far side
-  function boards(){
-    const g = new THREE.Group(), m = new THREE.MeshLambertMaterial({color: 0x0f3d8a});
-    const off = runoff + 0.5, h = 1.0;
+  (function boards(){
+    const g = new THREE.Group(), m = new THREE.MeshLambertMaterial({color: 0x0f3d8a}), off = runoff + 0.5, h = 1.0;
     const mk = (w, d, x, z) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); b.position.set(x, h/2, z); b.castShadow = true; g.add(b); };
-    mk(L + 2*off, 0.15, 0, -W/2 - off); mk(L + 2*off, 0.15, 0, W/2 + off);
-    mk(0.15, W + 2*off, -L/2 - off, 0); mk(0.15, W + 2*off, L/2 + off, 0);
+    mk(L + 2*off, 0.15, 0, -W/2 - off); mk(L + 2*off, 0.15, 0, W/2 + off); mk(0.15, W + 2*off, -L/2 - off, 0); mk(0.15, W + 2*off, L/2 + off, 0);
     const stand = new THREE.Mesh(new THREE.BoxGeometry(L + 30, 14, 22), new THREE.MeshLambertMaterial({color: 0xe6e6e6}));
-    stand.position.set(0, 7, -W/2 - off - 14); stand.rotation.x = -0.35; stand.receiveShadow = true; g.add(stand);
-    scene.add(g);
-  }
-  boards();
-
+    stand.position.set(0, 7, -W/2 - off - 14); stand.rotation.x = -0.35; stand.receiveShadow = true; g.add(stand); scene.add(g);
+  })();
   function goal(atLeft){
-    const g = new THREE.Group(), post = new THREE.MeshLambertMaterial({color: 0xffffff});
-    const s = atLeft ? -1 : 1, x0 = atLeft ? -L/2 : L/2;
+    const g = new THREE.Group(), post = new THREE.MeshLambertMaterial({color: 0xffffff}), s = atLeft ? -1 : 1, x0 = atLeft ? -L/2 : L/2;
     const bar = (w, h, d, x, y, z) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), post); b.position.set(x, y, z); b.castShadow = true; g.add(b); };
-    bar(0.08, GOAL_H, 0.08, x0, GOAL_H/2, -GOAL_W/2); bar(0.08, GOAL_H, 0.08, x0, GOAL_H/2, GOAL_W/2);
-    bar(0.08, 0.08, GOAL_W, x0, GOAL_H, 0);
+    bar(0.08, GOAL_H, 0.08, x0, GOAL_H/2, -GOAL_W/2); bar(0.08, GOAL_H, 0.08, x0, GOAL_H/2, GOAL_W/2); bar(0.08, 0.08, GOAL_W, x0, GOAL_H, 0);
     bar(0.05, GOAL_H, 0.05, x0 + s*GOAL_D, GOAL_H/2, -GOAL_W/2); bar(0.05, GOAL_H, 0.05, x0 + s*GOAL_D, GOAL_H/2, GOAL_W/2);
-    bar(GOAL_D, 0.05, 0.05, x0 + s*GOAL_D/2, GOAL_H, -GOAL_W/2); bar(GOAL_D, 0.05, 0.05, x0 + s*GOAL_D/2, GOAL_H, GOAL_W/2);
-    bar(0.05, 0.05, GOAL_W, x0 + s*GOAL_D, GOAL_H, 0);
+    bar(GOAL_D, 0.05, 0.05, x0 + s*GOAL_D/2, GOAL_H, -GOAL_W/2); bar(GOAL_D, 0.05, 0.05, x0 + s*GOAL_D/2, GOAL_H, GOAL_W/2); bar(0.05, 0.05, GOAL_W, x0 + s*GOAL_D, GOAL_H, 0);
     const net = new THREE.MeshBasicMaterial({color: 0xffffff, wireframe: true, transparent: true, opacity: .35});
     const back = new THREE.Mesh(new THREE.PlaneGeometry(GOAL_W, GOAL_H, 12, 7), net); back.rotation.y = Math.PI/2; back.position.set(x0 + s*GOAL_D, GOAL_H/2, 0); g.add(back);
     [-1,1].forEach(k => { const side = new THREE.Mesh(new THREE.PlaneGeometry(GOAL_D, GOAL_H, 4, 7), net); side.position.set(x0 + s*GOAL_D/2, GOAL_H/2, k*GOAL_W/2); g.add(side); });
@@ -161,86 +243,84 @@
   goal(true); goal(false);
 
   // ---------------------------------------------------------------- players
-  const people = new THREE.Group(); scene.add(people);
-  const pickables = [];
+  const people = new THREE.Group(); scene.add(people); const pickables = [];
   function label(text, bg, fg){
     const c = document.createElement("canvas"); c.width = 256; c.height = 128; const x = c.getContext("2d");
-    x.fillStyle = bg; x.beginPath(); x.roundRect ? x.roundRect(8, 8, 240, 112, 24) : x.rect(8, 8, 240, 112); x.fill();
-    x.fillStyle = fg; x.font = "700 78px 'Barlow Condensed', 'Arial Narrow', sans-serif"; x.textAlign = "center"; x.textBaseline = "middle"; x.fillText(text, 128, 66);
+    x.fillStyle = bg; x.beginPath(); if (x.roundRect) x.roundRect(8, 8, 240, 112, 24); else x.rect(8, 8, 240, 112); x.fill();
+    x.fillStyle = fg; x.font = "700 78px 'Barlow Condensed','Arial Narrow',sans-serif"; x.textAlign = "center"; x.textBaseline = "middle"; x.fillText(text, 128, 66);
     const sp = new THREE.Sprite(new THREE.SpriteMaterial({map: new THREE.CanvasTexture(c), depthTest: false})); sp.scale.set(1.6, 0.8, 1); return sp;
   }
   function person(key, X, Y){
     const isGK = key === "GK", isUmp = key === "UMP", team = key[0];
     const shirt = isGK ? 0x2ecc71 : isUmp ? 0x222222 : team === "R" ? 0xd62828 : 0xffffff;
-    const shorts = isGK ? 0xd62828 : isUmp ? 0x222222 : team === "R" ? 0xffffff : 0xffffff;
+    const shorts = isGK ? 0xd62828 : isUmp ? 0x222222 : 0xffffff;
     const g = new THREE.Group();
     const add = (geo, color, y) => { const m = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({color})); m.position.y = y; m.castShadow = true; g.add(m); return m; };
+    add(new THREE.CylinderGeometry(0.18, 0.14, 0.5, 12), isGK ? 0xd62828 : 0x1b1b1b, 0.25);
     add(new THREE.CylinderGeometry(isGK?0.34:0.24, isGK?0.36:0.26, 0.55, 14), shorts, 0.75);
     add(new THREE.CylinderGeometry(0.26, isGK?0.34:0.24, 0.62, 14), shirt, 1.32);
     add(new THREE.SphereGeometry(0.15, 14, 12), isGK ? 0xdddddd : 0xd9a577, 1.78);
-    const legs = add(new THREE.CylinderGeometry(0.18, 0.14, 0.5, 12), isGK ? 0xd62828 : 0x1b1b1b, 0.25);
     if (!isUmp && !isGK){ const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.95, 8), new THREE.MeshLambertMaterial({color: 0x3a2a1a})); stick.position.set(0.3, 0.5, 0.15); stick.rotation.z = 0.35; g.add(stick); }
-    const ring = new THREE.Mesh(new THREE.RingGeometry(0.5, 0.62, 32), new THREE.MeshBasicMaterial({color: shirt === 0xffffff ? 0xffffff : shirt, side: THREE.DoubleSide, transparent: true, opacity: .8}));
-    ring.rotation.x = -Math.PI/2; ring.position.y = 0.01; g.add(ring);
-    const lb = label(isUmp ? "U" : key, team === "W" && !isGK && !isUmp ? "#ffffff" : "#" + shirt.toString(16).padStart(6, "0"), team === "W" && !isGK && !isUmp ? "#111" : "#fff");
-    lb.position.y = 2.25; g.add(lb);
-    g.position.copy(toWorld(X, Y)); g.userData = {key, X, Y}; g.traverse(o => { if (o.isMesh) { o.userData.key = key; pickables.push(o); } });
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.5, 0.62, 32), new THREE.MeshBasicMaterial({color: shirt, side: THREE.DoubleSide, transparent: true, opacity: .8}));
+    ring.rotation.x = -Math.PI/2; ring.position.y = 0.02; g.add(ring);
+    const white = team === "W" && !isGK && !isUmp;
+    const lb = label(isUmp ? "U" : key, white ? "#ffffff" : "#" + shirt.toString(16).padStart(6, "0"), white ? "#111" : "#fff"); lb.position.y = 2.25; g.add(lb);
+    g.position.copy(toWorld(X, Y)); g.userData = {key}; g.traverse(o => { if (o.isMesh) { o.userData.key = key; pickables.push(o); } });
     people.add(g);
   }
   function build(){
     while (people.children.length) people.remove(people.children[0]); pickables.length = 0;
     Object.entries(positions).forEach(([k, [X, Y]]) => {
       if (k === "BALL"){ const b = new THREE.Mesh(new THREE.SphereGeometry(0.11, 16, 12), new THREE.MeshLambertMaterial({color: 0xffffff})); b.position.copy(toWorld(X, Y)); b.position.y = 0.11; b.castShadow = true; b.userData.key = "BALL"; people.add(b); pickables.push(b);
-        const halo = new THREE.Mesh(new THREE.RingGeometry(0.35, 0.45, 24), new THREE.MeshBasicMaterial({color: 0xffb000, side: THREE.DoubleSide})); halo.rotation.x = -Math.PI/2; halo.position.copy(toWorld(X, Y)); halo.position.y = 0.012; people.add(halo); }
+        const halo = new THREE.Mesh(new THREE.RingGeometry(0.35, 0.45, 24), new THREE.MeshBasicMaterial({color: 0xffb000, side: THREE.DoubleSide})); halo.rotation.x = -Math.PI/2; halo.position.copy(toWorld(X, Y)); halo.position.y = 0.022; people.add(halo); }
       else person(k, X, Y);
     });
-    // face the players toward the ball
-    if (positions.BALL) people.children.forEach(g => { if (g.userData.key && g.userData.key !== "BALL" && g.isGroup) g.lookAt(toWorld(...positions.BALL).setY(0)); });
+    if (positions.BALL) people.children.forEach(g => { if (g.isGroup) g.lookAt(toWorld(...positions.BALL).setY(0)); });
+    refreshInk(); save();
   }
   build();
 
-  // ---------------------------------------------------------------- controls
+  // ---------------------------------------------------------------- 3D controls
   const EYE = 1.7; let mode = "overview";
-  const player = {pos: new THREE.Vector3(0, EYE, 0), yaw: 0, pitch: 0};
-  const keys = {};
+  const player = {pos: new THREE.Vector3(0, EYE, 0), yaw: 0, pitch: 0}; const keys = {};
+  const focus = () => { const ks = Object.keys(positions); const b = positions.BALL || positions[ks[0]] || [L/2, W/2]; return b; };
   const overviewCam = {pos: new THREE.Vector3(38, 34, 62), target: toWorld(80, 42)};
-  function setOverview(){ mode = "overview"; document.body.classList.remove("walk"); document.exitPointerLock && document.exitPointerLock();
+  function setOverview(){ mode = "overview"; document.body.className = ""; if (document.exitPointerLock) document.exitPointerLock();
+    const f = focus(); overviewCam.target = toWorld(f[0], f[1]); overviewCam.pos.set(f[0] - L/2 - 20, 30, f[1] - W/2 + 48);
     camera.position.copy(overviewCam.pos); camera.lookAt(overviewCam.target); hint("Click anywhere on the pitch to start walking"); }
-  function dropIn(X, Y){ mode = "walk"; document.body.classList.add("walk");
+  function dropIn(X, Y){ mode = "walk"; document.body.className = "walk";
     player.pos.set(X - L/2, EYE, Y - W/2);
-    const b = positions.BALL ? toWorld(...positions.BALL) : new THREE.Vector3();
+    const f = focus(), b = toWorld(f[0], f[1]);
     player.yaw = Math.atan2(-(b.x - player.pos.x), -(b.z - player.pos.z)); player.pitch = -0.05;
-    if (!isTouch) canvas.requestPointerLock && canvas.requestPointerLock();
+    if (!isTouch && canvas.requestPointerLock) canvas.requestPointerLock();
     hint(isTouch ? "Left half: drag to move · right half: drag to look" : "W A S D to move · mouse to look · Esc releases the mouse"); }
   const hintEl = document.getElementById("hint"); function hint(t){ hintEl.textContent = t; }
   const isTouch = matchMedia("(pointer:coarse)").matches;
-
   const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
   function pick(ev){
     const r = canvas.getBoundingClientRect(); ndc.set(((ev.clientX - r.left)/r.width)*2 - 1, -((ev.clientY - r.top)/r.height)*2 + 1);
     ray.setFromCamera(ndc, camera);
     const hitP = ray.intersectObjects(pickables, false)[0];
-    if (hitP){ const k = hitP.object.userData.key, p = positions[k]; showInfo(k, p); return {player: k}; }
-    const hitG = ray.intersectObject(pitch)[0]; if (hitG){ const [X, Y] = fromWorld(hitG.point); return {ground: [X, Y]}; }
+    if (hitP){ const k = hitP.object.userData.key; showInfo(k); return {player: k}; }
+    const hitG = ray.intersectObject(pitch)[0]; if (hitG) return {ground: fromWorld(hitG.point)};
     return null;
   }
-  function showInfo(k, p){ const who = k === "BALL" ? "Ball (inferred)" : k === "GK" ? "Goalkeeper" : k === "UMP" ? "Umpire" : `${NAMES[k[0]]} · ${k}`;
-    document.getElementById("info").textContent = `${who} — ${p[0].toFixed(1)} m along, ${p[1].toFixed(1)} m from the far sideline`; }
-
+  function showInfo(k){ const p = positions[k]; if (!p) return; document.getElementById("info").textContent = `${who(k)} — ${p[0].toFixed(1)} m along, ${p[1].toFixed(1)} m from the far sideline`; }
   canvas.addEventListener("click", ev => {
     if (mode === "overview"){ const h = pick(ev); if (h && h.ground) dropIn(...h.ground); else if (h && h.player){ const p = positions[h.player]; dropIn(p[0] - 3, p[1] + 2); } }
     else if (!isTouch && document.pointerLockElement !== canvas) canvas.requestPointerLock();
-    else if (!isTouch){ ndc.set(0, 0); ray.setFromCamera(ndc, camera); const h = ray.intersectObjects(pickables, false)[0]; if (h) showInfo(h.object.userData.key, positions[h.object.userData.key]); }
+    else if (!isTouch){ ndc.set(0, 0); ray.setFromCamera(ndc, camera); const h = ray.intersectObjects(pickables, false)[0]; if (h) showInfo(h.object.userData.key); }
   });
   document.addEventListener("mousemove", ev => { if (mode === "walk" && document.pointerLockElement === canvas){ player.yaw -= ev.movementX * 0.0022; player.pitch = Math.max(-1.2, Math.min(1.2, player.pitch - ev.movementY * 0.0022)); } });
   document.addEventListener("pointerlockchange", () => { if (document.pointerLockElement !== canvas && mode === "walk") hint("Click the pitch to grab the mouse again · Overview button to zoom out"); });
-  addEventListener("keydown", e => { keys[e.code] = true;
-    if (/^Digit[1-9]$/.test(e.code)){ const ks = Object.keys(positions).filter(k => k !== "BALL"); const k = ks[+e.code.slice(5) - 1]; if (k){ const p = positions[k]; dropIn(p[0] - 2.5, p[1] + 1.5); showInfo(k, p); } } });
+  addEventListener("keydown", e => { if (e.target.tagName === "INPUT") return; keys[e.code] = true;
+    if (mode !== "board" && /^Digit[1-9]$/.test(e.code)){ const ks = Object.keys(positions).filter(k => k !== "BALL"); const k = ks[+e.code.slice(5) - 1]; if (k){ const p = positions[k]; dropIn(p[0] - 2.5, p[1] + 1.5); showInfo(k); } }
+    if (e.code === "KeyT" && mode !== "board") openBoard();
+    if (mode === "board"){ if (e.code === "Delete" || e.code === "Backspace") deleteSelected(); if ((e.ctrlKey || e.metaKey) && e.code === "KeyZ") undo(); if (e.code === "Escape") { selected = null; drawBoard(); } } });
   addEventListener("keyup", e => keys[e.code] = false);
-  document.getElementById("enter").onclick = () => { const b = positions.BALL || [L/2, W/2]; dropIn(b[0] - 8, b[1] - 4); };
+  document.getElementById("enter").onclick = () => { const b = focus(); dropIn(b[0] - 8, b[1] - 4); };
   document.getElementById("overview").onclick = setOverview;
-
-  // touch: left half moves, right half looks
+  document.getElementById("toBoard").onclick = openBoard;
   const touches = {};
   canvas.addEventListener("touchstart", e => { for (const t of e.changedTouches) touches[t.identifier] = {x: t.clientX, y: t.clientY, sx: t.clientX, sy: t.clientY, side: t.clientX < innerWidth/2 ? "move" : "look"}; }, {passive: true});
   canvas.addEventListener("touchmove", e => { for (const t of e.changedTouches){ const o = touches[t.identifier]; if (!o) continue;
@@ -253,48 +333,121 @@
   // ---------------------------------------------------------------- minimap
   const mini = document.getElementById("mini"), mctx = mini.getContext("2d");
   function drawMini(){
-    const {X, Y} = drawPitch(mctx, mini.width, mini.height, 14);
-    Object.entries(positions).forEach(([k, [x, y]]) => {
-      const c = k === "BALL" ? "#fff" : k === "GK" ? "#2ecc71" : k === "UMP" ? "#222" : k[0] === "R" ? "#d62828" : "#fff";
-      mctx.beginPath(); mctx.arc(X(x), Y(y), k === "BALL" ? 3 : 6, 0, 7); mctx.fillStyle = c; mctx.fill(); mctx.strokeStyle = "#000"; mctx.lineWidth = 1; mctx.stroke();
-    });
-    if (mode === "walk"){ const [x, y] = fromWorld(player.pos); mctx.save(); mctx.translate(X(x), Y(y)); mctx.rotate(-player.yaw);
+    const m = drawPitch(mctx, mini.width, mini.height, 14); drawShapes(mctx, m, drawings); drawMarkers(mctx, m, 6);
+    if (mode === "walk"){ const [x, y] = fromWorld(player.pos); mctx.save(); mctx.translate(m.X(x), m.Y(y)); mctx.rotate(-player.yaw);
       mctx.fillStyle = "#ffb000"; mctx.beginPath(); mctx.moveTo(0, -9); mctx.lineTo(6, 6); mctx.lineTo(-6, 6); mctx.closePath(); mctx.fill();
       mctx.fillStyle = "rgba(255,176,0,.25)"; mctx.beginPath(); mctx.moveTo(0, 0); mctx.arc(0, 0, 60, -Math.PI/2 - 0.6, -Math.PI/2 + 0.6); mctx.closePath(); mctx.fill(); mctx.restore(); }
   }
 
-  // ---------------------------------------------------------------- loop
+  // ---------------------------------------------------------------- tactics board (2D editor)
+  const board = document.getElementById("board"), bctx = board.getContext("2d"), textbox = document.getElementById("textbox");
+  let tool = "move", color = "#ffb000", dashed = false, selected = null, drag = null, current = null, bm = null;
+  function openBoard(){ mode = "board"; document.body.className = "board"; if (document.exitPointerLock) document.exitPointerLock(); selected = null; drawBoard(); }
+  document.getElementById("back3d").onclick = () => { build(); setOverview(); };
+  document.querySelectorAll("#tools [data-tool]").forEach(b => b.onclick = () => { tool = b.dataset.tool; document.querySelectorAll("#tools [data-tool]").forEach(x => x.classList.toggle("on", x === b)); selected = null; drawBoard(); });
+  document.querySelectorAll(".sw").forEach(b => b.onclick = () => { color = b.dataset.color; document.querySelectorAll(".sw").forEach(x => x.classList.toggle("on", x === b));
+    if (selected && selected.shape != null){ drawings[selected.shape].color = color; drawBoard(); save(); } });
+  document.getElementById("dash").onclick = e => { dashed = !dashed; e.target.classList.toggle("on", dashed); if (selected && selected.shape != null){ drawings[selected.shape].dashed = dashed; drawBoard(); save(); } };
+  function nextKey(t){ let i = 1; while (positions[t + i]) i++; return t + i; }
+  function addPlayer(t){ const k = nextKey(t); const f = focus(); positions[k] = [Math.max(2, Math.min(L - 2, f[0] - 12 + Math.random() * 6)), Math.max(2, Math.min(W - 2, f[1] - 3 + Math.random() * 6))]; selected = {key: k}; drawBoard(); save(); }
+  document.getElementById("addR").onclick = () => addPlayer("R"); document.getElementById("addW").onclick = () => addPlayer("W");
+  function deleteSelected(){ if (!selected) return; if (selected.key && selected.key !== "BALL") delete positions[selected.key]; if (selected.shape != null) drawings.splice(selected.shape, 1); selected = null; drawBoard(); save(); }
+  document.getElementById("del").onclick = deleteSelected;
+  function undo(){ drawings.pop(); selected = null; drawBoard(); save(); }
+  document.getElementById("undo").onclick = undo;
+  document.getElementById("clear").onclick = () => { drawings = []; selected = null; drawBoard(); save(); };
+  document.getElementById("reset").onclick = () => { positions = JSON.parse(JSON.stringify(DEFAULT)); drawings = []; selected = null; drawBoard(); save(); };
+
+  function boardMetrics(){
+    const dpr = Math.min(devicePixelRatio, 2), w = innerWidth, h = innerHeight;
+    if (board.width !== w * dpr | 0 || board.height !== h * dpr | 0){ board.width = w * dpr; board.height = h * dpr; }
+    bctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const top = 78, padX = 24, padY = 24; const availW = w - 2*padX, availH = h - top - 2*padY;
+    const s = Math.min(availW / (L + 6), availH / (W + 6)); const pw = (L + 6) * s, ph = (W + 6) * s;
+    const ox = (w - pw) / 2, oy = top + (h - top - ph) / 2;
+    return {ox, oy, s, pw, ph};
+  }
+  function drawBoard(){
+    if (mode !== "board") return;
+    const {ox, oy, s, pw, ph} = boardMetrics();
+    bctx.fillStyle = "#0b1a33"; bctx.fillRect(0, 0, innerWidth, innerHeight);
+    bctx.save(); bctx.translate(ox, oy);
+    bm = drawPitch(bctx, pw, ph, 3 * s);
+    const live = current ? drawings.concat([current]) : drawings; drawShapes(bctx, bm, live);
+    if (selected && selected.shape != null){ const d = drawings[selected.shape]; if (d){ const xs = d.pts.map(p => bm.X(p[0])), ys = d.pts.map(p => bm.Y(p[1]));
+        bctx.setLineDash([4, 4]); bctx.strokeStyle = "#ffb000"; bctx.lineWidth = 1.5; bctx.strokeRect(Math.min(...xs) - 8, Math.min(...ys) - 8, Math.max(...xs) - Math.min(...xs) + 16, Math.max(...ys) - Math.min(...ys) + 16); bctx.setLineDash([]); } }
+    drawMarkers(bctx, bm, Math.max(9, 1.1 * s), selected && selected.key);
+    bctx.restore();
+    bctx.fillStyle = "#aab8d3"; bctx.font = "500 12px Barlow, sans-serif"; bctx.textAlign = "center";
+    bctx.fillText(tool === "move" ? "Drag a player or a shape · click to select · Delete removes it" : tool === "text" ? "Click where the label should go" : tool === "pen" ? "Drag to draw freehand" : "Drag from start to end", innerWidth / 2, innerHeight - 12);
+  }
+  const toPitch = ev => { const {ox, oy} = boardMetrics(); return [(ev.clientX - ox - bm.X(0)) / bm.sx, (ev.clientY - oy - bm.Y(0)) / bm.sy]; };
+  const near = (a, b, tol) => Math.hypot((a[0] - b[0]) * bm.sx, (a[1] - b[1]) * bm.sy) < tol;
+  function hitShape(p){
+    for (let i = drawings.length - 1; i >= 0; i--){ const d = drawings[i], q = d.pts;
+      if (d.type === "text" && near(p, q[0], 24)) return i;
+      if ((d.type === "line" || d.type === "arrow") && distSeg(p, q[0], q[1]) < 10) return i;
+      if (d.type === "pen" && q.some((v, j) => j && distSeg(p, q[j-1], v) < 10)) return i;
+      if (d.type === "circle"){ const cx = (q[0][0] + q[1][0]) / 2, cy = (q[0][1] + q[1][1]) / 2, rx = Math.abs(q[1][0] - q[0][0]) / 2, ry = Math.abs(q[1][1] - q[0][1]) / 2;
+        const v = Math.hypot((p[0] - cx) / (rx || .1), (p[1] - cy) / (ry || .1)); if (Math.abs(v - 1) * Math.min(rx * bm.sx, ry * bm.sy) < 10) return i; } }
+    return null;
+  }
+  function distSeg(p, a, b){ const ax = a[0] * bm.sx, ay = a[1] * bm.sy, bx = b[0] * bm.sx, by = b[1] * bm.sy, px = p[0] * bm.sx, py = p[1] * bm.sy;
+    const l2 = (bx - ax) ** 2 + (by - ay) ** 2; const t = l2 ? Math.max(0, Math.min(1, ((px - ax) * (bx - ax) + (py - ay) * (by - ay)) / l2)) : 0; return Math.hypot(px - (ax + t * (bx - ax)), py - (ay + t * (by - ay))); }
+  const clampP = p => [Math.max(-3, Math.min(L + 3, p[0])), Math.max(-3, Math.min(W + 3, p[1]))];
+
+  board.addEventListener("pointerdown", ev => {
+    if (mode !== "board") return; board.setPointerCapture(ev.pointerId); const p = toPitch(ev); textbox.style.display = "none";
+    if (tool === "move"){
+      const k = Object.keys(positions).reverse().find(k => near(p, positions[k], 16));
+      if (k){ selected = {key: k}; drag = {key: k, off: [positions[k][0] - p[0], positions[k][1] - p[1]]}; }
+      else { const i = hitShape(p); selected = i == null ? null : {shape: i}; drag = i == null ? null : {shape: i, last: p}; }
+      drawBoard(); return;
+    }
+    if (tool === "text"){ textbox.style.display = "block"; textbox.style.left = ev.clientX + "px"; textbox.style.top = ev.clientY + "px"; textbox.value = ""; textbox.dataset.p = JSON.stringify(p); textbox.focus(); return; }
+    current = {type: tool, pts: [p, p], color, dashed}; if (tool === "pen") current.pts = [p]; drawBoard();
+  });
+  board.addEventListener("pointermove", ev => {
+    if (mode !== "board") return; const p = toPitch(ev);
+    if (drag && drag.key){ positions[drag.key] = clampP([p[0] + drag.off[0], p[1] + drag.off[1]]); drawBoard(); }
+    else if (drag && drag.shape != null){ const d = drawings[drag.shape], dx = p[0] - drag.last[0], dy = p[1] - drag.last[1]; d.pts = d.pts.map(q => [q[0] + dx, q[1] + dy]); drag.last = p; drawBoard(); }
+    else if (current){ if (current.type === "pen") current.pts.push(p); else current.pts[1] = p; drawBoard(); }
+  });
+  const finish = () => { if (current){ const q = current.pts; const ok = current.type === "pen" ? q.length > 2 : !near(q[0], q[1], 6); if (ok) drawings.push(current); current = null; } drag = null; drawBoard(); save(); };
+  board.addEventListener("pointerup", finish); board.addEventListener("pointercancel", finish);
+  textbox.addEventListener("keydown", e => { if (e.key === "Enter"){ const t = textbox.value.trim(); if (t) drawings.push({type: "text", pts: [JSON.parse(textbox.dataset.p)], color, text: t}); textbox.style.display = "none"; drawBoard(); save(); } if (e.key === "Escape") textbox.style.display = "none"; });
+  addEventListener("resize", drawBoard);
+
+  // ---------------------------------------------------------------- 3D loop
   const clock = new THREE.Clock(); const dir = new THREE.Vector3();
-  function resize(){ const w = canvas.clientWidth, h = canvas.clientHeight; if (canvas.width !== w * renderer.getPixelRatio() | 0){ renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); } }
+  function resize(){ const w = canvas.clientWidth, h = canvas.clientHeight; if (w && canvas.width !== (w * renderer.getPixelRatio() | 0)){ renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); } }
   function frame(){
+    requestAnimationFrame(frame); if (mode === "board") return;
     const dt = Math.min(clock.getDelta(), 0.05); resize();
     if (mode === "walk"){
       const speed = (keys.ShiftLeft || keys.ShiftRight ? 7 : 3.2) * dt; dir.set(0, 0, 0);
-      if (keys.KeyW || keys.ArrowUp) dir.z -= 1; if (keys.KeyS || keys.ArrowDown) dir.z += 1;
-      if (keys.KeyA || keys.ArrowLeft) dir.x -= 1; if (keys.KeyD || keys.ArrowRight) dir.x += 1;
+      if (keys.KeyW || keys.ArrowUp) dir.z -= 1; if (keys.KeyS || keys.ArrowDown) dir.z += 1; if (keys.KeyA || keys.ArrowLeft) dir.x -= 1; if (keys.KeyD || keys.ArrowRight) dir.x += 1;
       for (const id in touches){ const o = touches[id]; if (o.side === "move"){ dir.x += Math.max(-1, Math.min(1, (o.x - o.sx)/60)); dir.z += Math.max(-1, Math.min(1, (o.y - o.sy)/60)); } }
       if (dir.lengthSq() > 0){ dir.normalize().applyAxisAngle(new THREE.Vector3(0, 1, 0), player.yaw); player.pos.addScaledVector(dir, speed);
         const lim = runoff + 0.2; player.pos.x = Math.max(-L/2 - lim, Math.min(L/2 + lim, player.pos.x)); player.pos.z = Math.max(-W/2 - lim, Math.min(W/2 + lim, player.pos.z));
-        // keep out of the players
-        people.children.forEach(g => { if (!g.isGroup) return; const d = g.position.clone().sub(player.pos); d.y = 0; if (d.length() < 0.8){ player.pos.sub(d.normalize().multiplyScalar(0.8 - d.length())); } });
+        people.children.forEach(g => { if (!g.isGroup) return; const d = g.position.clone().sub(player.pos); d.y = 0; const n = d.length(); if (n < 0.8 && n > 0){ player.pos.sub(d.normalize().multiplyScalar(0.8 - n)); } });
         player.pos.y = EYE + Math.sin(performance.now() / 140) * 0.02; }
-      camera.position.copy(player.pos);
-      camera.rotation.set(0, 0, 0, "YXZ"); camera.rotation.y = player.yaw; camera.rotation.x = player.pitch;
+      camera.position.copy(player.pos); camera.rotation.set(0, 0, 0, "YXZ"); camera.rotation.y = player.yaw; camera.rotation.x = player.pitch;
     } else {
       const t = performance.now() / 20000; camera.position.set(overviewCam.pos.x + Math.sin(t) * 6, overviewCam.pos.y, overviewCam.pos.z + Math.cos(t) * 3); camera.lookAt(overviewCam.target);
     }
     people.children.forEach(g => { if (g.isGroup){ const sp = g.children[g.children.length - 1]; if (sp.isSprite) sp.material.opacity = Math.min(1, 40 / camera.position.distanceTo(g.position)); } });
-    renderer.render(scene, camera); drawMini(); requestAnimationFrame(frame);
+    renderer.render(scene, camera); drawMini();
   }
   setOverview(); frame();
 
   // ---------------------------------------------------------------- load another positions.json
   document.getElementById("file").addEventListener("change", ev => {
     const f = ev.target.files[0]; if (!f) return; const r = new FileReader();
-    r.onload = () => { try { const j = JSON.parse(r.result); const p = j.positions_m || j; const ok = Object.values(p).every(v => Array.isArray(v) && v.length >= 2);
-        if (!ok) throw 0; positions = Object.fromEntries(Object.entries(p).map(([k, v]) => [k, [+v[0], +v[1]]])); build(); document.getElementById("info").textContent = `Loaded ${Object.keys(positions).length} markers from ${f.name}`; }
-      catch { document.getElementById("info").textContent = "That file isn't a positions file. Use the positions.json the analysis script writes."; } };
-    r.readAsText(f);
+    r.onload = () => { try { const j = JSON.parse(r.result); const p = j.positions_m || j.positions || j; const ok = Object.values(p).every(v => Array.isArray(v) && v.length >= 2);
+        if (!ok) throw 0; positions = Object.fromEntries(Object.entries(p).map(([k, v]) => [k, [+v[0], +v[1]]])); if (j.drawings) drawings = j.drawings; build(); setOverview(); document.getElementById("info").textContent = `Loaded ${Object.keys(positions).length} markers from ${f.name}`; }
+      catch (e) { document.getElementById("info").textContent = "That file isn't a positions file. Use the positions.json the analysis script writes."; } };
+    r.readAsText(f); ev.target.value = "";
   });
 })();
 </script>
