@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Astro Walk</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500&display=swap">
+<style>
+  :root{
+    --astro:#1d5fbf; --astro-deep:#0f3d8a; --line:#ffffff; --navy:#0b1a33; --navy-2:#122a52;
+    --ink:#f3f6fb; --ink-dim:#aab8d3; --amber:#ffb000; --red:#d62828; --white:#ffffff; --green:#2ecc71;
+    --panel:rgba(11,26,51,.82); --edge:rgba(255,255,255,.14);
+    --display:"Barlow Condensed","Arial Narrow",sans-serif; --body:"Barlow","Helvetica Neue",Arial,sans-serif;
+  }
+  html,body{height:100%;margin:0;background:var(--navy);color:var(--ink);font-family:var(--body);overflow:hidden}
+  #stage{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:crosshair}
+  .hud{position:fixed;left:16px;top:calc(16px + env(safe-area-inset-top,0px));width:min(320px,calc(100vw - 32px));
+       background:var(--panel);border:1px solid var(--edge);backdrop-filter:blur(8px);border-radius:6px;padding:14px 16px;z-index:5}
+  .hud h1{font-family:var(--display);font-weight:700;font-size:26px;letter-spacing:.02em;margin:0 0 2px;line-height:1;text-transform:uppercase}
+  .hud .sub{color:var(--ink-dim);font-size:13px;margin:0 0 10px}
+  .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  button,label.btn{font:500 13px var(--body);color:var(--ink);background:var(--navy-2);border:1px solid var(--edge);border-radius:4px;padding:7px 11px;cursor:pointer}
+  button.primary{background:var(--amber);color:#1a1200;border-color:transparent;font-weight:500}
+  button:focus-visible,label.btn:focus-within{outline:2px solid var(--amber);outline-offset:2px}
+  #file{position:absolute;width:1px;height:1px;opacity:0}
+  .keys{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;font-size:12.5px;color:var(--ink-dim);margin-top:10px}
+  .keys b{color:var(--ink);font-family:var(--display);font-size:13px;letter-spacing:.06em;font-weight:600}
+  #info{margin-top:10px;font-size:13px;min-height:18px;color:var(--amber)}
+  #hint{position:fixed;left:50%;bottom:calc(22px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);
+        background:var(--panel);border:1px solid var(--edge);border-radius:999px;padding:8px 16px;font-size:13px;z-index:5;white-space:nowrap;max-width:calc(100vw - 32px);overflow:hidden;text-overflow:ellipsis}
+  #mini{position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));width:min(260px,44vw);aspect-ratio:1.85;
+        border:1px solid var(--edge);border-radius:6px;background:var(--astro-deep);z-index:5}
+  #cross{position:fixed;left:50%;top:50%;width:14px;height:14px;margin:-7px 0 0 -7px;pointer-events:none;z-index:4;display:none}
+  #cross:before,#cross:after{content:"";position:absolute;background:rgba(255,255,255,.85)}
+  #cross:before{left:6px;top:0;width:2px;height:14px}#cross:after{top:6px;left:0;width:14px;height:2px}
+  body.walk #cross{display:block}
+  .legend{display:flex;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--ink-dim);margin-top:8px}
+  .legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px;vertical-align:-1px;border:1px solid rgba(0,0,0,.4)}
+  @media (max-width:520px){.hud{padding:10px 12px}.hud h1{font-size:22px}.keys{display:none}#hint{font-size:12px}}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head><body>
+
+<canvas id="stage"></canvas>
+<div id="cross"></div>
+
+<div class="hud">
+  <h1>Astro Walk</h1>
+  <p class="sub">Paris 2024 · ESP in red · positions from the photo</p>
+  <div class="row">
+    <button id="enter" class="primary">Walk on the astro</button>
+    <button id="overview">Overview</button>
+    <label class="btn" for="file">Load positions</label>
+    <input id="file" type="file" accept="application/json">
+  </div>
+  <div class="keys">
+    <b>CLICK</b><span>on the astro to drop in at that spot</span>
+    <b>W A S D</b><span>move · mouse looks · Shift runs</span>
+    <b>1 – 9</b><span>jump to a player</span>
+    <b>ESC</b><span>release the mouse</span>
+  </div>
+  <div class="legend">
+    <span><i style="background:#d62828"></i>Spain</span><span><i style="background:#fff"></i>Opponent</span>
+    <span><i style="background:#2ecc71"></i>Keeper</span><span><i style="background:#222"></i>Umpire</span><span><i style="background:#ffb000"></i>You</span>
+  </div>
+  <div id="info"></div>
+</div>
+
+<div id="hint">Click anywhere on the pitch to start walking</div>
+<canvas id="mini" width="520" height="281"></canvas>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+  // ---------------------------------------------------------------- data
+  const L = 91.4, W = 55, GOAL_W = 3.66, GOAL_D = 1.22, GOAL_H = 2.14, R_D = 14.63, R_DOT = 19.63, L23 = 22.9, PEN = 6.4;
+  // X = metres from the left goal line, Y = metres from the far sideline (top of the top view)
+  let positions = {"R1":[87.0,37.0],"R2":[86.2,42.7],"R3":[80.1,46.7],"R4":[83.9,49.1],"R5":[86.3,24.6],
+                   "W1":[87.5,37.7],"W2":[77.9,50.2],"W3":[85.2,50.8],"W4":[69.4,43.6],
+                   "GK":[91.0,27.4],"UMP":[91.9,41.2],"BALL":[79.2,48.3]};
+  const NAMES = {R:"Spain", W:"Opponent", GK:"Goalkeeper", UMP:"Umpire", BALL:"Ball"};
+
+  // ---------------------------------------------------------------- pitch texture (shared with the minimap)
+  function drawPitch(ctx, w, h, pad){
+    const sx = (w - 2*pad) / L, sy = (h - 2*pad) / W;
+    const X = x => pad + x*sx, Y = y => pad + y*sy;
+    ctx.fillStyle = "#1d5fbf"; ctx.fillRect(0,0,w,h);
+    ctx.strokeStyle = "#fff"; ctx.lineWidth = Math.max(2, w/300); ctx.lineCap = "round";
+    ctx.strokeRect(X(0), Y(0), L*sx, W*sy);
+    [L23, L/2, L-L23].forEach(x => { ctx.beginPath(); ctx.moveTo(X(x),Y(0)); ctx.lineTo(X(x),Y(W)); ctx.stroke(); });
+    const yc = W/2, pf = yc-GOAL_W/2, pn = yc+GOAL_W/2;
+    [[0,1],[L,-1]].forEach(([x0,s]) => {
+      [[R_D,false],[R_DOT,true]].forEach(([r,dot]) => {
+        ctx.setLineDash(dot ? [w/120, w/120] : []);
+        ctx.beginPath();
+        // arc around the far post, straight section, arc around the near post
+        ctx.ellipse(X(x0), Y(pf), r*sx, r*sy, 0, -Math.PI/2, s>0?0:Math.PI, s<0);
+        ctx.lineTo(X(x0+s*r), Y(pn));
+        ctx.ellipse(X(x0), Y(pn), r*sx, r*sy, 0, s>0?0:Math.PI, Math.PI/2, s<0);
+        ctx.stroke(); ctx.setLineDash([]);
+      });
+      ctx.beginPath(); ctx.arc(X(x0+s*PEN), Y(yc), w/260, 0, 7); ctx.fillStyle="#fff"; ctx.fill();
+    });
+    ctx.beginPath(); ctx.arc(X(L/2), Y(W/2), w/400, 0, 7); ctx.fill();
+    return {X, Y};
+  }
+
+  // ---------------------------------------------------------------- three.js scene
+  const canvas = document.getElementById("stage");
+  const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x9fc5ec);
+  scene.fog = new THREE.Fog(0x9fc5ec, 160, 420);
+  const camera = new THREE.PerspectiveCamera(70, 1, 0.1, 800);
+
+  const hemi = new THREE.HemisphereLight(0xdfeeff, 0x1d5fbf, 0.9); scene.add(hemi);
+  const sun = new THREE.DirectionalLight(0xfff4e0, 1.1); sun.position.set(-60, 90, 40); sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  Object.assign(sun.shadow.camera, {left:-80, right:80, top:60, bottom:-60, near:10, far:250}); scene.add(sun);
+
+  // pitch plane: world x = X - L/2, world z = Y - W/2, y up
+  const tex = (() => { const c = document.createElement("canvas"); c.width = 2048; c.height = 1260;
+    drawPitch(c.getContext("2d"), c.width, c.height, 60); const t = new THREE.CanvasTexture(c); t.anisotropy = 8; return t; })();
+  // the texture carries a 60 px run-off on each side; size the plane so the lines land at true scale
+  const planeW = L * 2048 / (2048 - 120), planeH = W * 1260 / (1260 - 120), runoff = (planeW - L) / 2;
+  const pitch = new THREE.Mesh(new THREE.PlaneGeometry(planeW, planeH), new THREE.MeshLambertMaterial({map: tex}));
+  pitch.rotation.x = -Math.PI/2; pitch.receiveShadow = true; scene.add(pitch);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(1200, 1200), new THREE.MeshLambertMaterial({color: 0x30703a}));
+  ground.rotation.x = -Math.PI/2; ground.position.y = -0.02; ground.receiveShadow = true; scene.add(ground);
+
+  const toWorld = (X, Y) => new THREE.Vector3(X - L/2, 0, Y - W/2);
+  const fromWorld = v => [v.x + L/2, v.z + W/2];
+
+  // perimeter boards + a simple stand on the far side
+  function boards(){
+    const g = new THREE.Group(), m = new THREE.MeshLambertMaterial({color: 0x0f3d8a});
+    const off = runoff + 0.5, h = 1.0;
+    const mk = (w, d, x, z) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); b.position.set(x, h/2, z); b.castShadow = true; g.add(b); };
+    mk(L + 2*off, 0.15, 0, -W/2 - off); mk(L + 2*off, 0.15, 0, W/2 + off);
+    mk(0.15, W + 2*off, -L/2 - off, 0); mk(0.15, W + 2*off, L/2 + off, 0);
+    const stand = new THREE.Mesh(new THREE.BoxGeometry(L + 30, 14, 22), new THREE.MeshLambertMaterial({color: 0xe6e6e6}));
+    stand.position.set(0, 7, -W/2 - off - 14); stand.rotation.x = -0.35; stand.receiveShadow = true; g.add(stand);
+    scene.add(g);
+  }
+  boards();
+
+  function goal(atLeft){
+    const g = new THREE.Group(), post = new THREE.MeshLambertMaterial({color: 0xffffff});
+    const s = atLeft ? -1 : 1, x0 = atLeft ? -L/2 : L/2;
+    const bar = (w, h, d, x, y, z) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), post); b.position.set(x, y, z); b.castShadow = true; g.add(b); };
+    bar(0.08, GOAL_H, 0.08, x0, GOAL_H/2, -GOAL_W/2); bar(0.08, GOAL_H, 0.08, x0, GOAL_H/2, GOAL_W/2);
+    bar(0.08, 0.08, GOAL_W, x0, GOAL_H, 0);
+    bar(0.05, GOAL_H, 0.05, x0 + s*GOAL_D, GOAL_H/2, -GOAL_W/2); bar(0.05, GOAL_H, 0.05, x0 + s*GOAL_D, GOAL_H/2, GOAL_W/2);
+    bar(GOAL_D, 0.05, 0.05, x0 + s*GOAL_D/2, GOAL_H, -GOAL_W/2); bar(GOAL_D, 0.05, 0.05, x0 + s*GOAL_D/2, GOAL_H, GOAL_W/2);
+    bar(0.05, 0.05, GOAL_W, x0 + s*GOAL_D, GOAL_H, 0);
+    const net = new THREE.MeshBasicMaterial({color: 0xffffff, wireframe: true, transparent: true, opacity: .35});
+    const back = new THREE.Mesh(new THREE.PlaneGeometry(GOAL_W, GOAL_H, 12, 7), net); back.rotation.y = Math.PI/2; back.position.set(x0 + s*GOAL_D, GOAL_H/2, 0); g.add(back);
+    [-1,1].forEach(k => { const side = new THREE.Mesh(new THREE.PlaneGeometry(GOAL_D, GOAL_H, 4, 7), net); side.position.set(x0 + s*GOAL_D/2, GOAL_H/2, k*GOAL_W/2); g.add(side); });
+    const board = new THREE.Mesh(new THREE.BoxGeometry(GOAL_D, 0.46, GOAL_W), new THREE.MeshLambertMaterial({color: 0x1b2a4a})); board.position.set(x0 + s*GOAL_D/2, 0.23, 0); g.add(board);
+    scene.add(g);
+  }
+  goal(true); goal(false);
+
+  // ---------------------------------------------------------------- players
+  const people = new THREE.Group(); scene.add(people);
+  const pickables = [];
+  function label(text, bg, fg){
+    const c = document.createElement("canvas"); c.width = 256; c.height = 128; const x = c.getContext("2d");
+    x.fillStyle = bg; x.beginPath(); x.roundRect ? x.roundRect(8, 8, 240, 112, 24) : x.rect(8, 8, 240, 112); x.fill();
+    x.fillStyle = fg; x.font = "700 78px 'Barlow Condensed', 'Arial Narrow', sans-serif"; x.textAlign = "center"; x.textBaseline = "middle"; x.fillText(text, 128, 66);
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({map: new THREE.CanvasTexture(c), depthTest: false})); sp.scale.set(1.6, 0.8, 1); return sp;
+  }
+  function person(key, X, Y){
+    const isGK = key === "GK", isUmp = key === "UMP", team = key[0];
+    const shirt = isGK ? 0x2ecc71 : isUmp ? 0x222222 : team === "R" ? 0xd62828 : 0xffffff;
+    const shorts = isGK ? 0xd62828 : isUmp ? 0x222222 : team === "R" ? 0xffffff : 0xffffff;
+    const g = new THREE.Group();
+    const add = (geo, color, y) => { const m = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({color})); m.position.y = y; m.castShadow = true; g.add(m); return m; };
+    add(new THREE.CylinderGeometry(isGK?0.34:0.24, isGK?0.36:0.26, 0.55, 14), shorts, 0.75);
+    add(new THREE.CylinderGeometry(0.26, isGK?0.34:0.24, 0.62, 14), shirt, 1.32);
+    add(new THREE.SphereGeometry(0.15, 14, 12), isGK ? 0xdddddd : 0xd9a577, 1.78);
+    const legs = add(new THREE.CylinderGeometry(0.18, 0.14, 0.5, 12), isGK ? 0xd62828 : 0x1b1b1b, 0.25);
+    if (!isUmp && !isGK){ const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.95, 8), new THREE.MeshLambertMaterial({color: 0x3a2a1a})); stick.position.set(0.3, 0.5, 0.15); stick.rotation.z = 0.35; g.add(stick); }
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.5, 0.62, 32), new THREE.MeshBasicMaterial({color: shirt === 0xffffff ? 0xffffff : shirt, side: THREE.DoubleSide, transparent: true, opacity: .8}));
+    ring.rotation.x = -Math.PI/2; ring.position.y = 0.01; g.add(ring);
+    const lb = label(isUmp ? "U" : key, team === "W" && !isGK && !isUmp ? "#ffffff" : "#" + shirt.toString(16).padStart(6, "0"), team === "W" && !isGK && !isUmp ? "#111" : "#fff");
+    lb.position.y = 2.25; g.add(lb);
+    g.position.copy(toWorld(X, Y)); g.userData = {key, X, Y}; g.traverse(o => { if (o.isMesh) { o.userData.key = key; pickables.push(o); } });
+    people.add(g);
+  }
+  function build(){
+    while (people.children.length) people.remove(people.children[0]); pickables.length = 0;
+    Object.entries(positions).forEach(([k, [X, Y]]) => {
+      if (k === "BALL"){ const b = new THREE.Mesh(new THREE.SphereGeometry(0.11, 16, 12), new THREE.MeshLambertMaterial({color: 0xffffff})); b.position.copy(toWorld(X, Y)); b.position.y = 0.11; b.castShadow = true; b.userData.key = "BALL"; people.add(b); pickables.push(b);
+        const halo = new THREE.Mesh(new THREE.RingGeometry(0.35, 0.45, 24), new THREE.MeshBasicMaterial({color: 0xffb000, side: THREE.DoubleSide})); halo.rotation.x = -Math.PI/2; halo.position.copy(toWorld(X, Y)); halo.position.y = 0.012; people.add(halo); }
+      else person(k, X, Y);
+    });
+    // face the players toward the ball
+    if (positions.BALL) people.children.forEach(g => { if (g.userData.key && g.userData.key !== "BALL" && g.isGroup) g.lookAt(toWorld(...positions.BALL).setY(0)); });
+  }
+  build();
+
+  // ---------------------------------------------------------------- controls
+  const EYE = 1.7; let mode = "overview";
+  const player = {pos: new THREE.Vector3(0, EYE, 0), yaw: 0, pitch: 0};
+  const keys = {};
+  const overviewCam = {pos: new THREE.Vector3(38, 34, 62), target: toWorld(80, 42)};
+  function setOverview(){ mode = "overview"; document.body.classList.remove("walk"); document.exitPointerLock && document.exitPointerLock();
+    camera.position.copy(overviewCam.pos); camera.lookAt(overviewCam.target); hint("Click anywhere on the pitch to start walking"); }
+  function dropIn(X, Y){ mode = "walk"; document.body.classList.add("walk");
+    player.pos.set(X - L/2, EYE, Y - W/2);
+    const b = positions.BALL ? toWorld(...positions.BALL) : new THREE.Vector3();
+    player.yaw = Math.atan2(-(b.x - player.pos.x), -(b.z - player.pos.z)); player.pitch = -0.05;
+    if (!isTouch) canvas.requestPointerLock && canvas.requestPointerLock();
+    hint(isTouch ? "Left half: drag to move · right half: drag to look" : "W A S D to move · mouse to look · Esc releases the mouse"); }
+  const hintEl = document.getElementById("hint"); function hint(t){ hintEl.textContent = t; }
+  const isTouch = matchMedia("(pointer:coarse)").matches;
+
+  const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+  function pick(ev){
+    const r = canvas.getBoundingClientRect(); ndc.set(((ev.clientX - r.left)/r.width)*2 - 1, -((ev.clientY - r.top)/r.height)*2 + 1);
+    ray.setFromCamera(ndc, camera);
+    const hitP = ray.intersectObjects(pickables, false)[0];
+    if (hitP){ const k = hitP.object.userData.key, p = positions[k]; showInfo(k, p); return {player: k}; }
+    const hitG = ray.intersectObject(pitch)[0]; if (hitG){ const [X, Y] = fromWorld(hitG.point); return {ground: [X, Y]}; }
+    return null;
+  }
+  function showInfo(k, p){ const who = k === "BALL" ? "Ball (inferred)" : k === "GK" ? "Goalkeeper" : k === "UMP" ? "Umpire" : `${NAMES[k[0]]} · ${k}`;
+    document.getElementById("info").textContent = `${who} — ${p[0].toFixed(1)} m along, ${p[1].toFixed(1)} m from the far sideline`; }
+
+  canvas.addEventListener("click", ev => {
+    if (mode === "overview"){ const h = pick(ev); if (h && h.ground) dropIn(...h.ground); else if (h && h.player){ const p = positions[h.player]; dropIn(p[0] - 3, p[1] + 2); } }
+    else if (!isTouch && document.pointerLockElement !== canvas) canvas.requestPointerLock();
+    else if (!isTouch){ ndc.set(0, 0); ray.setFromCamera(ndc, camera); const h = ray.intersectObjects(pickables, false)[0]; if (h) showInfo(h.object.userData.key, positions[h.object.userData.key]); }
+  });
+  document.addEventListener("mousemove", ev => { if (mode === "walk" && document.pointerLockElement === canvas){ player.yaw -= ev.movementX * 0.0022; player.pitch = Math.max(-1.2, Math.min(1.2, player.pitch - ev.movementY * 0.0022)); } });
+  document.addEventListener("pointerlockchange", () => { if (document.pointerLockElement !== canvas && mode === "walk") hint("Click the pitch to grab the mouse again · Overview button to zoom out"); });
+  addEventListener("keydown", e => { keys[e.code] = true;
+    if (/^Digit[1-9]$/.test(e.code)){ const ks = Object.keys(positions).filter(k => k !== "BALL"); const k = ks[+e.code.slice(5) - 1]; if (k){ const p = positions[k]; dropIn(p[0] - 2.5, p[1] + 1.5); showInfo(k, p); } } });
+  addEventListener("keyup", e => keys[e.code] = false);
+  document.getElementById("enter").onclick = () => { const b = positions.BALL || [L/2, W/2]; dropIn(b[0] - 8, b[1] - 4); };
+  document.getElementById("overview").onclick = setOverview;
+
+  // touch: left half moves, right half looks
+  const touches = {};
+  canvas.addEventListener("touchstart", e => { for (const t of e.changedTouches) touches[t.identifier] = {x: t.clientX, y: t.clientY, sx: t.clientX, sy: t.clientY, side: t.clientX < innerWidth/2 ? "move" : "look"}; }, {passive: true});
+  canvas.addEventListener("touchmove", e => { for (const t of e.changedTouches){ const o = touches[t.identifier]; if (!o) continue;
+      if (o.side === "look" && mode === "walk"){ player.yaw -= (t.clientX - o.x) * 0.005; player.pitch = Math.max(-1.2, Math.min(1.2, player.pitch - (t.clientY - o.y) * 0.005)); }
+      o.x = t.clientX; o.y = t.clientY; } e.preventDefault(); }, {passive: false});
+  canvas.addEventListener("touchend", e => { for (const t of e.changedTouches){ const o = touches[t.identifier];
+      if (o && Math.hypot(t.clientX - o.sx, t.clientY - o.sy) < 8 && mode === "overview"){ const h = pick(t); if (h && h.ground) dropIn(...h.ground); }
+      delete touches[t.identifier]; } });
+
+  // ---------------------------------------------------------------- minimap
+  const mini = document.getElementById("mini"), mctx = mini.getContext("2d");
+  function drawMini(){
+    const {X, Y} = drawPitch(mctx, mini.width, mini.height, 14);
+    Object.entries(positions).forEach(([k, [x, y]]) => {
+      const c = k === "BALL" ? "#fff" : k === "GK" ? "#2ecc71" : k === "UMP" ? "#222" : k[0] === "R" ? "#d62828" : "#fff";
+      mctx.beginPath(); mctx.arc(X(x), Y(y), k === "BALL" ? 3 : 6, 0, 7); mctx.fillStyle = c; mctx.fill(); mctx.strokeStyle = "#000"; mctx.lineWidth = 1; mctx.stroke();
+    });
+    if (mode === "walk"){ const [x, y] = fromWorld(player.pos); mctx.save(); mctx.translate(X(x), Y(y)); mctx.rotate(-player.yaw);
+      mctx.fillStyle = "#ffb000"; mctx.beginPath(); mctx.moveTo(0, -9); mctx.lineTo(6, 6); mctx.lineTo(-6, 6); mctx.closePath(); mctx.fill();
+      mctx.fillStyle = "rgba(255,176,0,.25)"; mctx.beginPath(); mctx.moveTo(0, 0); mctx.arc(0, 0, 60, -Math.PI/2 - 0.6, -Math.PI/2 + 0.6); mctx.closePath(); mctx.fill(); mctx.restore(); }
+  }
+
+  // ---------------------------------------------------------------- loop
+  const clock = new THREE.Clock(); const dir = new THREE.Vector3();
+  function resize(){ const w = canvas.clientWidth, h = canvas.clientHeight; if (canvas.width !== w * renderer.getPixelRatio() | 0){ renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); } }
+  function frame(){
+    const dt = Math.min(clock.getDelta(), 0.05); resize();
+    if (mode === "walk"){
+      const speed = (keys.ShiftLeft || keys.ShiftRight ? 7 : 3.2) * dt; dir.set(0, 0, 0);
+      if (keys.KeyW || keys.ArrowUp) dir.z -= 1; if (keys.KeyS || keys.ArrowDown) dir.z += 1;
+      if (keys.KeyA || keys.ArrowLeft) dir.x -= 1; if (keys.KeyD || keys.ArrowRight) dir.x += 1;
+      for (const id in touches){ const o = touches[id]; if (o.side === "move"){ dir.x += Math.max(-1, Math.min(1, (o.x - o.sx)/60)); dir.z += Math.max(-1, Math.min(1, (o.y - o.sy)/60)); } }
+      if (dir.lengthSq() > 0){ dir.normalize().applyAxisAngle(new THREE.Vector3(0, 1, 0), player.yaw); player.pos.addScaledVector(dir, speed);
+        const lim = runoff + 0.2; player.pos.x = Math.max(-L/2 - lim, Math.min(L/2 + lim, player.pos.x)); player.pos.z = Math.max(-W/2 - lim, Math.min(W/2 + lim, player.pos.z));
+        // keep out of the players
+        people.children.forEach(g => { if (!g.isGroup) return; const d = g.position.clone().sub(player.pos); d.y = 0; if (d.length() < 0.8){ player.pos.sub(d.normalize().multiplyScalar(0.8 - d.length())); } });
+        player.pos.y = EYE + Math.sin(performance.now() / 140) * 0.02; }
+      camera.position.copy(player.pos);
+      camera.rotation.set(0, 0, 0, "YXZ"); camera.rotation.y = player.yaw; camera.rotation.x = player.pitch;
+    } else {
+      const t = performance.now() / 20000; camera.position.set(overviewCam.pos.x + Math.sin(t) * 6, overviewCam.pos.y, overviewCam.pos.z + Math.cos(t) * 3); camera.lookAt(overviewCam.target);
+    }
+    people.children.forEach(g => { if (g.isGroup){ const sp = g.children[g.children.length - 1]; if (sp.isSprite) sp.material.opacity = Math.min(1, 40 / camera.position.distanceTo(g.position)); } });
+    renderer.render(scene, camera); drawMini(); requestAnimationFrame(frame);
+  }
+  setOverview(); frame();
+
+  // ---------------------------------------------------------------- load another positions.json
+  document.getElementById("file").addEventListener("change", ev => {
+    const f = ev.target.files[0]; if (!f) return; const r = new FileReader();
+    r.onload = () => { try { const j = JSON.parse(r.result); const p = j.positions_m || j; const ok = Object.values(p).every(v => Array.isArray(v) && v.length >= 2);
+        if (!ok) throw 0; positions = Object.fromEntries(Object.entries(p).map(([k, v]) => [k, [+v[0], +v[1]]])); build(); document.getElementById("info").textContent = `Loaded ${Object.keys(positions).length} markers from ${f.name}`; }
+      catch { document.getElementById("info").textContent = "That file isn't a positions file. Use the positions.json the analysis script writes."; } };
+    r.readAsText(f);
+  });
+})();
+</script>
+</body></html>
