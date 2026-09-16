@@ -144,11 +144,11 @@
   let frames = [{name: "Frame 1", positions: copy(SCENES[sceneKey].positions), drawings: []}], cur = 0;
   const SCENES = {
     match:  {label: "Match · ESP v opponents (photo 1)", sub: "Paris 2024 · ESP in red · positions from the photo", positions: DEFAULT},
-    warmup: {label: "Warm-up · red v bibs (photo 2)", sub: "Paris 2024 warm-up · red shirts and light-blue bibs · from the photo", positions: {"R1": [8.4, 20.8], "R2": [19.2, 37.9], "R3": [20.7, 36.1], "R4": [23.8, 37.6], "R5": [23.0, 39.3], "B1": [11.5, 21.1], "B2": [13.8, 22.8], "B3": [17.3, 37.4], "B4": [19.6, 35.8], "B5": [22.3, 37.6], "B6": [16.7, 38.9], "GK": [1.5, 22.8], "COACH": [24.2, 34.2], "BALL": [18.7, 36.3]}}
+    warmup: {label: "Warm-up · red v bibs (photo 2)", sub: "Paris 2024 warm-up · red shirts and light-blue bibs · from the photo", positions: {"R1": [8.9, 20.8], "R2": [27.6, 37.9], "R3": [29.0, 36.1], "R4": [32.2, 37.6], "R5": [31.3, 39.3], "B1": [16.0, 21.1], "B2": [21.3, 22.8], "B3": [21.9, 37.4], "B4": [27.9, 35.8], "B5": [30.7, 37.6], "B6": [25.1, 38.9], "GK": [2.3, 22.8], "COACH": [32.6, 34.2], "BALL": [27.0, 36.3]}}
   };
   let sceneKey = "match";
   try { sceneKey = localStorage.getItem("astro-walk-scene") || "match"; if (!SCENES[sceneKey]) sceneKey = "match"; } catch (e) {}
-  const storeKey = () => "astro-walk-v2-" + sceneKey;
+  const storeKey = () => "astro-walk-v3-" + sceneKey;
   let positions, drawings;   // always point at the current frame's data
   function useFrame(i){ cur = Math.max(0, Math.min(frames.length - 1, i)); positions = frames[cur].positions; drawings = frames[cur].drawings; }
   const NAMES = {R:"Red", W:"White", B:"Bibs"};

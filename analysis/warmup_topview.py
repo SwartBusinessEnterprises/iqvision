@@ -75,7 +75,27 @@ print("camera X=%.1f Y=%.1f Z=%.1f az=%.1f tilt=%.1f f=%.0f" % (prm[0],prm[1],pr
 for name, P in [("goal centre",[0,YC,0]),("pen spot",[PEN,YC,0]),("D apex",[R_D,YC,0]),("D far end",[0,YC-R_D-GOAL_W/2,0]),("dot apex",[R_DOT,YC,0]),("23m@far",[LINE_23,0,0])]:
     print("  %-10s -> px %s" % (name, np.round(project(np.array(P,float), prm)[0])))
 pos = {k: back(v, prm) for k, v in players.items()}
-pos["GK"] = (min(pos["GK"][0], 1.5), pos["GK"][1])
+# Along-pitch calibration from the photo: the long line under the drill group is
+# the 23 m line.  Only R1, B1, B2, B3 and the keeper are on the goal side of it;
+# the rest of the group and the coach stand just beyond it.  Map the model's X
+# so that line lands at 22.90 m while the goal line stays put.
+line_pts = [(170, 690), (600, 645), (890, 625), (1300, 583)]
+x_line = np.mean([back(q, prm)[0] for q in line_pts])
+print("model X of the 23 m line = %.1f -> rescaled to 22.90" % x_line)
+# The model is right around the circle (arc start / apex match the photo) but
+# compresses depth toward the camera, so shift only the region beyond the circle.
+shift = LINE_23 - x_line
+def fix_x(x):
+    if x <= 8: return x
+    if x >= x_line: return x + shift
+    return x + shift * (x - 8) / (x_line - 8)
+pos = {k: (fix_x(x), y) for k, (x, y) in pos.items()}
+inside = {"R1", "B1", "B2", "B3", "GK"}
+for k in pos:
+    x, y = pos[k]
+    if k in inside: pos[k] = (min(x, LINE_23 - 1.0), y)
+    elif k != "BALL": pos[k] = (max(x, LINE_23 + 0.8), y)
+pos["BALL"] = (max(pos["BALL"][0], LINE_23 + 0.5), pos["BALL"][1])
 for k,(x,y) in pos.items(): print("%-5s X=%5.1f Y=%5.1f" % (k,x,y))
 json.dump({"camera":{"X":prm[0],"Y":prm[1],"Z":prm[2],"azimuth_deg":np.degrees(prm[3]),"tilt_deg":np.degrees(prm[4]),"focal_px":prm[5]},
            "positions_m":pos,"pixels":players}, open("analysis/positions_warmup.json","w"), indent=2)
