@@ -24,7 +24,7 @@
   .keys{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;font-size:12.5px;color:var(--ink-dim);margin-top:10px}
   .keys b{color:var(--ink);font-family:var(--display);font-size:13px;letter-spacing:.06em;font-weight:600}
   #info{margin-top:10px;font-size:13px;min-height:18px;color:var(--amber)}
-  #hint{position:fixed;left:50%;bottom:calc(22px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);
+  #hint{position:fixed;left:50%;bottom:calc(66px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);
         background:var(--panel);border:1px solid var(--edge);border-radius:999px;padding:8px 16px;font-size:13px;z-index:5;white-space:nowrap;max-width:calc(100vw - 32px);overflow:hidden;text-overflow:ellipsis}
   #mini{position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));width:min(260px,44vw);aspect-ratio:1.85;
         border:1px solid var(--edge);border-radius:6px;background:var(--astro-deep);z-index:5}
@@ -46,6 +46,15 @@
   .sw.on{border-color:#fff;box-shadow:0 0 0 2px var(--navy)}
   body:not(.board) #tools,body:not(.board) #board{display:none}
   body.board .hud,body.board #hint,body.board #mini,body.board #stage{display:none}
+  body.walk #frames{display:none}
+  #frames{position:fixed;left:50%;bottom:calc(14px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:6;
+          display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:center;max-width:calc(100vw - 32px);
+          background:var(--panel);border:1px solid var(--edge);backdrop-filter:blur(8px);border-radius:6px;padding:6px 8px}
+  #frames .lbl{font-family:var(--display);font-size:12px;letter-spacing:.08em;color:var(--ink-dim);text-transform:uppercase;margin-right:4px}
+  #frames .tab{padding:5px 10px;font-family:var(--display);font-size:14px;letter-spacing:.03em}
+  #frames .tab.on{background:var(--amber);color:#1a1200;border-color:transparent}
+  #frames button{padding:5px 9px}
+  #frames input{font:600 14px var(--display);width:110px;padding:4px 6px;border:1px solid var(--amber);border-radius:3px;background:#fff;color:#111}
   #textbox{position:fixed;z-index:7;display:none;font:600 16px var(--display);padding:4px 6px;border:1px solid var(--amber);border-radius:3px;background:#fff;color:#111;min-width:120px}
   @media (max-width:520px){.hud{padding:10px 12px}.hud h1{font-size:22px}.keys{display:none}#hint{font-size:12px}#tools{padding:6px}#tools .lbl{display:none}}
   @media (prefers-reduced-motion:reduce){*{transition:none!important}}
@@ -71,6 +80,7 @@
     <b>W A S D</b><span>move · mouse looks · Shift runs</span>
     <b>1 – 9</b><span>jump to a player</span>
     <b>T</b><span>open the tactics board</span>
+    <b>[ ]</b><span>previous / next frame</span>
   </div>
   <div class="legend">
     <span><i style="background:#d62828"></i>Spain</span><span><i style="background:#fff"></i>Opponent</span>
@@ -104,6 +114,16 @@
 </div>
 
 <div id="hint">Click anywhere on the pitch to start walking</div>
+<div id="frames">
+  <span class="lbl">Frames</span>
+  <button id="fPrev" title="Previous frame">◀</button>
+  <span id="fTabs" style="display:flex;gap:4px;flex-wrap:wrap"></span>
+  <button id="fNext" title="Next frame">▶</button>
+  <button id="fAdd" class="primary">+ Frame</button>
+  <button id="fRename">Rename</button>
+  <button id="fDel">Delete</button>
+  <button id="fPlay">Play</button>
+</div>
 <canvas id="mini" width="520" height="281"></canvas>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -115,15 +135,21 @@
   const DEFAULT = {"R1":[87.0,37.0],"R2":[86.2,42.7],"R3":[80.1,46.7],"R4":[83.9,49.1],"R5":[86.3,24.6],
                    "W1":[87.5,37.7],"W2":[77.9,50.2],"W3":[85.2,50.8],"W4":[69.4,43.6],
                    "GK":[91.0,27.4],"UMP":[91.9,41.2],"BALL":[79.2,48.3]};
-  let positions = JSON.parse(JSON.stringify(DEFAULT));
-  let drawings = [];   // {type:'line'|'arrow'|'circle'|'pen'|'text', pts:[[X,Y],..], color, dashed, text}
+  const copy = o => JSON.parse(JSON.stringify(o));
+  // keyframes: each holds its own player layout and drawings
+  let frames = [{name: "Frame 1", positions: copy(DEFAULT), drawings: []}], cur = 0;
+  let positions, drawings;   // always point at the current frame's data
+  function useFrame(i){ cur = Math.max(0, Math.min(frames.length - 1, i)); positions = frames[cur].positions; drawings = frames[cur].drawings; }
   const NAMES = {R:"Spain", W:"Opponent"};
   const who = k => k === "BALL" ? "Ball" : k === "GK" ? "Goalkeeper" : k === "UMP" ? "Umpire" : `${NAMES[k[0]]} · ${k}`;
   const colorOf = k => k === "BALL" ? "#ffffff" : k === "GK" ? "#2ecc71" : k === "UMP" ? "#222222" : k[0] === "R" ? "#d62828" : "#ffffff";
 
   // remembered per viewer (convenience only)
-  try { const s = JSON.parse(localStorage.getItem("astro-walk-v1") || "null"); if (s && s.positions) { positions = s.positions; drawings = s.drawings || []; } } catch (e) {}
-  function save(){ try { localStorage.setItem("astro-walk-v1", JSON.stringify({positions, drawings})); } catch (e) {} }
+  try { const s = JSON.parse(localStorage.getItem("astro-walk-v1") || "null");
+    if (s && s.frames && s.frames.length) { frames = s.frames; cur = s.cur || 0; }
+    else if (s && s.positions) frames = [{name: "Frame 1", positions: s.positions, drawings: s.drawings || []}]; } catch (e) {}
+  useFrame(cur);
+  function save(){ try { localStorage.setItem("astro-walk-v1", JSON.stringify({frames, cur})); } catch (e) {} }
 
   // ---------------------------------------------------------------- pitch + drawing renderers (shared by texture, minimap, board)
   function drawPitch(ctx, w, h, pad){
@@ -269,7 +295,7 @@
     while (people.children.length) people.remove(people.children[0]); pickables.length = 0;
     Object.entries(positions).forEach(([k, [X, Y]]) => {
       if (k === "BALL"){ const b = new THREE.Mesh(new THREE.SphereGeometry(0.11, 16, 12), new THREE.MeshLambertMaterial({color: 0xffffff})); b.position.copy(toWorld(X, Y)); b.position.y = 0.11; b.castShadow = true; b.userData.key = "BALL"; people.add(b); pickables.push(b);
-        const halo = new THREE.Mesh(new THREE.RingGeometry(0.35, 0.45, 24), new THREE.MeshBasicMaterial({color: 0xffb000, side: THREE.DoubleSide})); halo.rotation.x = -Math.PI/2; halo.position.copy(toWorld(X, Y)); halo.position.y = 0.022; people.add(halo); }
+        const halo = new THREE.Mesh(new THREE.RingGeometry(0.35, 0.45, 24), new THREE.MeshBasicMaterial({color: 0xffb000, side: THREE.DoubleSide})); halo.rotation.x = -Math.PI/2; halo.position.copy(toWorld(X, Y)); halo.position.y = 0.022; halo.userData.key = "BALL_HALO"; people.add(halo); }
       else person(k, X, Y);
     });
     if (positions.BALL) people.children.forEach(g => { if (g.isGroup) g.lookAt(toWorld(...positions.BALL).setY(0)); });
@@ -313,6 +339,7 @@
   addEventListener("keydown", e => { if (e.target.tagName === "INPUT") return; keys[e.code] = true;
     if (mode !== "board" && /^Digit[1-9]$/.test(e.code)){ const ks = Object.keys(positions).filter(k => k !== "BALL"); const k = ks[+e.code.slice(5) - 1]; if (k){ const p = positions[k]; dropIn(p[0] - 2.5, p[1] + 1.5); showInfo(k); } }
     if (e.code === "KeyT" && mode !== "board") openBoard();
+    if (e.code === "BracketLeft") showFrame(cur - 1); if (e.code === "BracketRight") showFrame(cur + 1);
     if (mode === "board"){ if (e.code === "Delete" || e.code === "Backspace") deleteSelected(); if ((e.ctrlKey || e.metaKey) && e.code === "KeyZ") undo(); if (e.code === "Escape") { selected = null; drawBoard(); } } });
   addEventListener("keyup", e => keys[e.code] = false);
   document.getElementById("enter").onclick = () => { const b = focus(); dropIn(b[0] - 8, b[1] - 4); };
@@ -353,15 +380,15 @@
   function undo(){ drawings.pop(); selected = null; drawBoard(); save(); }
   document.getElementById("undo").onclick = undo;
   document.getElementById("clear").onclick = () => { drawings = []; selected = null; drawBoard(); save(); };
-  document.getElementById("reset").onclick = () => { positions = JSON.parse(JSON.stringify(DEFAULT)); drawings = []; selected = null; drawBoard(); save(); };
+  document.getElementById("reset").onclick = () => { frames[cur] = {name: frames[cur].name, positions: copy(DEFAULT), drawings: []}; useFrame(cur); selected = null; drawBoard(); save(); };
 
   function boardMetrics(){
     const dpr = Math.min(devicePixelRatio, 2), w = innerWidth, h = innerHeight;
     if (board.width !== w * dpr | 0 || board.height !== h * dpr | 0){ board.width = w * dpr; board.height = h * dpr; }
     bctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const top = 78, padX = 24, padY = 24; const availW = w - 2*padX, availH = h - top - 2*padY;
-    const s = Math.min(availW / (L + 6), availH / (W + 6)); const pw = (L + 6) * s, ph = (W + 6) * s;
-    const ox = (w - pw) / 2, oy = top + (h - top - ph) / 2;
+    const bottom = 76; const s = Math.min(availW / (L + 6), (availH - bottom) / (W + 6)); const pw = (L + 6) * s, ph = (W + 6) * s;
+    const ox = (w - pw) / 2, oy = top + (h - top - bottom - ph) / 2;
     return {ox, oy, s, pw, ph};
   }
   function drawBoard(){
@@ -376,7 +403,7 @@
     drawMarkers(bctx, bm, Math.max(9, 1.1 * s), selected && selected.key);
     bctx.restore();
     bctx.fillStyle = "#aab8d3"; bctx.font = "500 12px Barlow, sans-serif"; bctx.textAlign = "center";
-    bctx.fillText(tool === "move" ? "Drag a player or a shape · click to select · Delete removes it" : tool === "text" ? "Click where the label should go" : tool === "pen" ? "Drag to draw freehand" : "Drag from start to end", innerWidth / 2, innerHeight - 12);
+    bctx.fillText(tool === "move" ? "Drag a player or a shape · click to select · Delete removes it" : tool === "text" ? "Click where the label should go" : tool === "pen" ? "Drag to draw freehand" : "Drag from start to end", innerWidth / 2, innerHeight - 66);
   }
   const toPitch = ev => { const {ox, oy} = boardMetrics(); return [(ev.clientX - ox - bm.X(0)) / bm.sx, (ev.clientY - oy - bm.Y(0)) / bm.sy]; };
   const near = (a, b, tol) => Math.hypot((a[0] - b[0]) * bm.sx, (a[1] - b[1]) * bm.sy) < tol;
@@ -415,6 +442,37 @@
   textbox.addEventListener("keydown", e => { if (e.key === "Enter"){ const t = textbox.value.trim(); if (t) drawings.push({type: "text", pts: [JSON.parse(textbox.dataset.p)], color, text: t}); textbox.style.display = "none"; drawBoard(); save(); } if (e.key === "Escape") textbox.style.display = "none"; });
   addEventListener("resize", drawBoard);
 
+  // ---------------------------------------------------------------- keyframes
+  const tabs = document.getElementById("fTabs");
+  function renderStrip(){
+    tabs.innerHTML = "";
+    frames.forEach((f, i) => { const b = document.createElement("button"); b.className = "tab" + (i === cur ? " on" : ""); b.textContent = f.name; b.title = "Show " + f.name;
+      b.onclick = () => showFrame(i); b.ondblclick = () => renameFrame(); tabs.appendChild(b); });
+  }
+  function showFrame(i){ if (anim) return; useFrame(i); selected = null; if (mode === "board") drawBoard(); else build(); renderStrip(); save(); }
+  document.getElementById("fPrev").onclick = () => showFrame(cur - 1);
+  document.getElementById("fNext").onclick = () => showFrame(cur + 1);
+  document.getElementById("fAdd").onclick = () => { // duplicate the current frame right after it
+    const f = frames[cur], n = frames.length + 1; frames.splice(cur + 1, 0, {name: "Frame " + n, positions: copy(f.positions), drawings: copy(f.drawings)}); showFrame(cur + 1); };
+  document.getElementById("fDel").onclick = () => { if (frames.length === 1){ frames[0] = {name: "Frame 1", positions: copy(DEFAULT), drawings: []}; showFrame(0); return; } frames.splice(cur, 1); showFrame(Math.min(cur, frames.length - 1)); };
+  function renameFrame(){ const b = tabs.children[cur]; if (!b) return; const inp = document.createElement("input"); inp.value = frames[cur].name; inp.setAttribute("aria-label", "frame name");
+    b.replaceWith(inp); inp.focus(); inp.select();
+    const done = () => { const v = inp.value.trim(); if (v) frames[cur].name = v; renderStrip(); save(); };
+    inp.addEventListener("keydown", e => { if (e.key === "Enter") done(); if (e.key === "Escape") renderStrip(); }); inp.addEventListener("blur", done); }
+  document.getElementById("fRename").onclick = renameFrame;
+  // playback: glide the players from frame to frame in 3D
+  let anim = null;
+  function play(){ if (anim || frames.length < 2) return; if (mode === "board"){ build(); setOverview(); }
+    if (cur === frames.length - 1){ useFrame(0); build(); renderStrip(); } hint("Playing frames…"); glide(cur); }
+  function glide(i){ if (i + 1 >= frames.length){ anim = null; hint(mode === "walk" ? "W A S D to move · mouse to look" : "Click anywhere on the pitch to start walking"); save(); return; }
+    anim = {from: copy(frames[i].positions), to: frames[i + 1].positions, t0: performance.now(), dur: 1500, next: i + 1}; }
+  function tick(){ if (!anim) return; const t = Math.min(1, (performance.now() - anim.t0) / anim.dur), e = t < .5 ? 2*t*t : 1 - Math.pow(-2*t + 2, 2) / 2;
+    people.children.forEach(o => { const k = o.userData.key === "BALL_HALO" ? "BALL" : o.userData.key; const a = anim.from[k], b = anim.to[k]; if (!a || !b) return;
+      const v = toWorld(a[0] + (b[0] - a[0]) * e, a[1] + (b[1] - a[1]) * e); o.position.x = v.x; o.position.z = v.z; });
+    if (t >= 1){ const n = anim.next; anim = null; useFrame(n); build(); renderStrip(); setTimeout(() => { if (mode !== "board" && !anim) glide(n); }, 700); } }
+  document.getElementById("fPlay").onclick = play;
+  renderStrip();
+
   // ---------------------------------------------------------------- 3D loop
   const clock = new THREE.Clock(); const dir = new THREE.Vector3();
   function resize(){ const w = canvas.clientWidth, h = canvas.clientHeight; if (w && canvas.width !== (w * renderer.getPixelRatio() | 0)){ renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); } }
@@ -433,6 +491,7 @@
     } else {
       const t = performance.now() / 20000; camera.position.set(overviewCam.pos.x + Math.sin(t) * 6, overviewCam.pos.y, overviewCam.pos.z + Math.cos(t) * 3); camera.lookAt(overviewCam.target);
     }
+    tick();
     people.children.forEach(g => { if (g.isGroup){ const sp = g.children[g.children.length - 1]; if (sp.isSprite) sp.material.opacity = Math.min(1, 40 / camera.position.distanceTo(g.position)); } });
     renderer.render(scene, camera); drawMini();
   }
@@ -441,8 +500,10 @@
   // ---------------------------------------------------------------- load another positions.json
   document.getElementById("file").addEventListener("change", ev => {
     const f = ev.target.files[0]; if (!f) return; const r = new FileReader();
-    r.onload = () => { try { const j = JSON.parse(r.result); const p = j.positions_m || j.positions || j; const ok = Object.values(p).every(v => Array.isArray(v) && v.length >= 2);
-        if (!ok) throw 0; positions = Object.fromEntries(Object.entries(p).map(([k, v]) => [k, [+v[0], +v[1]]])); if (j.drawings) drawings = j.drawings; build(); setOverview(); document.getElementById("info").textContent = `Loaded ${Object.keys(positions).length} markers from ${f.name}`; }
+    r.onload = () => { try { const j = JSON.parse(r.result); const p = j.positions_m || j.positions || (j.frames ? j.frames[0].positions : j); const ok = Object.values(p).every(v => Array.isArray(v) && v.length >= 2);
+        if (!ok) throw 0; if (j.frames && j.frames.length) { frames = j.frames; useFrame(j.cur || 0); }
+        else { frames = [{name: "Frame 1", positions: Object.fromEntries(Object.entries(p).map(([k, v]) => [k, [+v[0], +v[1]]])), drawings: j.drawings || []}]; useFrame(0); }
+        renderStrip(); build(); setOverview(); document.getElementById("info").textContent = `Loaded ${Object.keys(positions).length} markers from ${f.name}`; }
       catch (e) { document.getElementById("info").textContent = "That file isn't a positions file. Use the positions.json the analysis script writes."; } };
     r.readAsText(f); ev.target.value = "";
   });

@@ -18,3 +18,11 @@ ball, add or delete red and white players, and draw lines, arrows, circles,
 freehand strokes and text labels in five colours (solid or dashed). "Back to
 3D" places the new layout and the drawings on the astro. Layout and drawings
 are remembered in the browser and reset with "Reset layout".
+
+## Keyframes
+
+The strip at the bottom holds keyframes. "+ Frame" copies the current frame
+(players and drawings) as a new frame after it; edits always save into the
+frame that is showing. Click a tab, use ◀ ▶ or the [ and ] keys to switch,
+Rename or double-click a tab to name it, Delete removes it, and Play glides
+the players from frame to frame in 3D.
