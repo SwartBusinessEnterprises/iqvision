@@ -102,7 +102,13 @@ def residuals(prm):
     for (fx, fy), hpx, hm in height_cues:
         gx, gy = back_project((fx, fy), prm)
         head = project(np.array([gx, gy, hm]), prm)[0]
-        r.append(0.5 * ((fy - head[1]) - hpx))
+        r.append(0.15 * ((fy - head[1]) - hpx))
+    # extra ground truths from the photo: the umpire stands just outside the
+    # backline, and the 23 m line shows at the bottom-left of the frame, just
+    # below the walking white player (all players are inside the 23 m area).
+    r.append(15.0 * (back_project(players["UMP"], prm)[0] - (-0.5)))
+    r.append(15.0 * (back_project((440, 935), prm)[0] - LINE_23))
+    r.append(15.0 * (back_project((60, 900), prm)[0] - LINE_23))
     Xc, Yc, Zc = prm[:3]
     r.append(0.2 * (Yc - 66))     # weak priors: camera in the near stand,
     r.append(0.2 * (Zc - 18))     # ~10 m behind the sideline, elevated
@@ -118,6 +124,13 @@ print("camera X=%.1f Y=%.1f Z=%.1f  az=%.1f deg  tilt=%.1f deg  f=%.0f px  (rms 
 # The goal in the photo is the RIGHT-hand goal of the drawn pitch, so mirror
 # the along-pitch coordinate (the camera sits at the left end of the near stand).
 pos = {k: (L - back_project(v, prm)[0], back_project(v, prm)[1]) for k, v in players.items()}
+# Final along-pitch calibration on two confirmed references from the photo:
+# the umpire stands ~0.5 m outside the backline and the walking white player
+# (W4) is just inside the 23 m line. Fit d' = a*d + b through those two points.
+d_ump, d_w4 = L - pos["UMP"][0], L - pos["W4"][0]
+a = (22.0 - (-0.5)) / (d_w4 - d_ump); b = -0.5 - a * d_ump
+pos = {k: (L - (a * (L - x) + b), y) for k, (x, y) in pos.items()}
+pos["GK"] = (L - 0.4, pos["GK"][1])   # keeper is on the goal line in the photo
 for k, (x, y) in pos.items():
     print("%-4s  X=%5.1f m from left goal line   Y=%5.1f m from far sideline" % (k, x, y))
 json.dump({"camera": {"X": prm[0], "Y": prm[1], "Z": prm[2], "azimuth_deg": np.degrees(prm[3]),
