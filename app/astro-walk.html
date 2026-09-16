@@ -21,6 +21,7 @@
   button.on{background:var(--amber);color:#1a1200;border-color:transparent}
   button:focus-visible,label.btn:focus-within{outline:2px solid var(--amber);outline-offset:2px}
   #file{position:absolute;width:1px;height:1px;opacity:0}
+  select{font:500 13px var(--body);color:var(--ink);background:var(--navy-2);border:1px solid var(--edge);border-radius:4px;padding:6px 8px;max-width:100%}
   .keys{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;font-size:12.5px;color:var(--ink-dim);margin-top:10px}
   .keys b{color:var(--ink);font-family:var(--display);font-size:13px;letter-spacing:.06em;font-weight:600}
   #info{margin-top:10px;font-size:13px;min-height:18px;color:var(--amber)}
@@ -67,7 +68,9 @@
 
 <div class="hud">
   <h1>Astro Walk</h1>
-  <p class="sub">Paris 2024 · ESP in red · positions from the photo</p>
+  <p class="sub" id="sub">Paris 2024 · ESP in red · positions from the photo</p>
+  <div class="row"><label for="scene" class="lbl" style="align-self:center;font-size:12px;color:var(--ink-dim)">Scene</label>
+    <select id="scene"><option value="match">Match · ESP v opponents (photo 1)</option><option value="warmup">Warm-up · red v bibs (photo 2)</option></select></div>
   <div class="row">
     <button id="enter" class="primary">Walk on the astro</button>
     <button id="overview">Overview</button>
@@ -84,8 +87,8 @@
     <b>SPACE</b><span>play / stop the frames</span>
   </div>
   <div class="legend">
-    <span><i style="background:#d62828"></i>Spain</span><span><i style="background:#fff"></i>Opponent</span>
-    <span><i style="background:#2ecc71"></i>Keeper</span><span><i style="background:#222"></i>Umpire</span><span><i style="background:#ffb000"></i>You</span>
+    <span><i style="background:#d62828"></i>Red</span><span><i style="background:#fff"></i>White</span><span><i style="background:#8fd3f4"></i>Bibs</span>
+    <span><i style="background:#2ecc71"></i>Keeper</span><span><i style="background:#222"></i>Umpire / coach</span><span><i style="background:#ffb000"></i>You</span>
   </div>
   <div id="info"></div>
 </div>
@@ -109,7 +112,7 @@
     <button id="dash" title="Dashed line">Dashed</button>
   </div>
   <div class="grp"><span class="lbl">Players</span>
-    <button id="addR">+ Red</button><button id="addW">+ White</button><button id="del">Delete</button>
+    <button id="addR">+ Red</button><button id="addW">+ White</button><button id="addB">+ Bib</button><button id="del">Delete</button>
   </div>
   <div class="grp"><button id="undo">Undo</button><button id="clear">Clear drawing</button><button id="reset">Reset layout</button></div>
 </div>
@@ -138,19 +141,28 @@
                    "GK":[91.0,27.4],"UMP":[91.9,41.2],"BALL":[79.2,48.3]};
   const copy = o => JSON.parse(JSON.stringify(o));
   // keyframes: each holds its own player layout and drawings
-  let frames = [{name: "Frame 1", positions: copy(DEFAULT), drawings: []}], cur = 0;
+  let frames = [{name: "Frame 1", positions: copy(SCENES[sceneKey].positions), drawings: []}], cur = 0;
+  const SCENES = {
+    match:  {label: "Match · ESP v opponents (photo 1)", sub: "Paris 2024 · ESP in red · positions from the photo", positions: DEFAULT},
+    warmup: {label: "Warm-up · red v bibs (photo 2)", sub: "Paris 2024 warm-up · red shirts and light-blue bibs · from the photo", positions: {"R1": [8.4, 20.8], "R2": [19.2, 37.9], "R3": [20.7, 36.1], "R4": [23.8, 37.6], "R5": [23.0, 39.3], "B1": [11.5, 21.1], "B2": [13.8, 22.8], "B3": [17.3, 37.4], "B4": [19.6, 35.8], "B5": [22.3, 37.6], "B6": [16.7, 38.9], "GK": [1.5, 22.8], "COACH": [24.2, 34.2], "BALL": [18.7, 36.3]}}
+  };
+  let sceneKey = "match";
+  try { sceneKey = localStorage.getItem("astro-walk-scene") || "match"; if (!SCENES[sceneKey]) sceneKey = "match"; } catch (e) {}
+  const storeKey = () => "astro-walk-v2-" + sceneKey;
   let positions, drawings;   // always point at the current frame's data
   function useFrame(i){ cur = Math.max(0, Math.min(frames.length - 1, i)); positions = frames[cur].positions; drawings = frames[cur].drawings; }
-  const NAMES = {R:"Spain", W:"Opponent"};
-  const who = k => k === "BALL" ? "Ball" : k === "GK" ? "Goalkeeper" : k === "UMP" ? "Umpire" : `${NAMES[k[0]]} · ${k}`;
-  const colorOf = k => k === "BALL" ? "#ffffff" : k === "GK" ? "#2ecc71" : k === "UMP" ? "#222222" : k[0] === "R" ? "#d62828" : "#ffffff";
+  const NAMES = {R:"Red", W:"White", B:"Bibs"};
+  const who = k => k === "BALL" ? "Ball" : k === "GK" ? "Goalkeeper" : k === "UMP" ? "Umpire" : k === "COACH" ? "Coach" : `${NAMES[k[0]] || k[0]} · ${k}`;
+  const colorOf = k => k === "BALL" ? "#ffffff" : k === "GK" ? "#2ecc71" : (k === "UMP" || k === "COACH") ? "#222222" : k[0] === "R" ? "#d62828" : k[0] === "B" ? "#8fd3f4" : "#ffffff";
 
   // remembered per viewer (convenience only)
-  try { const s = JSON.parse(localStorage.getItem("astro-walk-v1") || "null");
-    if (s && s.frames && s.frames.length) { frames = s.frames; cur = s.cur || 0; }
-    else if (s && s.positions) frames = [{name: "Frame 1", positions: s.positions, drawings: s.drawings || []}]; } catch (e) {}
-  useFrame(cur);
-  function save(){ try { localStorage.setItem("astro-walk-v1", JSON.stringify({frames, cur})); } catch (e) {} }
+  function loadStored(){ frames = [{name: "Frame 1", positions: copy(SCENES[sceneKey].positions), drawings: []}]; cur = 0;
+    try { const s = JSON.parse(localStorage.getItem(storeKey()) || localStorage.getItem(sceneKey === "match" ? "astro-walk-v1" : "x") || "null");
+      if (s && s.frames && s.frames.length) { frames = s.frames; cur = s.cur || 0; }
+      else if (s && s.positions) frames = [{name: "Frame 1", positions: s.positions, drawings: s.drawings || []}]; } catch (e) {}
+    useFrame(cur); }
+  loadStored();
+  function save(){ try { localStorage.setItem(storeKey(), JSON.stringify({frames, cur})); localStorage.setItem("astro-walk-scene", sceneKey); } catch (e) {} }
 
   // ---------------------------------------------------------------- pitch + drawing renderers (shared by texture, minimap, board)
   function drawPitch(ctx, w, h, pad){
@@ -208,7 +220,7 @@
     Object.entries(positions).forEach(([k, [x, y]]) => {
       const isBall = k === "BALL"; ctx.beginPath(); ctx.arc(X(x), Y(y), isBall ? r * .45 : r, 0, 7);
       ctx.fillStyle = colorOf(k); ctx.fill(); ctx.lineWidth = k === selectedKey ? 3 : 1.5; ctx.strokeStyle = k === selectedKey ? "#ffb000" : "#000"; ctx.stroke();
-      if (!isBall && r > 8){ ctx.fillStyle = (k[0] === "W" && k !== "GK") ? "#111" : "#fff"; ctx.font = `700 ${r * 1.05}px 'Barlow Condensed','Arial Narrow',sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(k === "UMP" ? "U" : k, X(x), Y(y) + 1); }
+      if (!isBall && r > 8){ ctx.fillStyle = ((k[0] === "W" || k[0] === "B") && k !== "GK") ? "#111" : "#fff"; ctx.font = `700 ${r * 1.05}px 'Barlow Condensed','Arial Narrow',sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(k === "UMP" ? "U" : k === "COACH" ? "C" : k, X(x), Y(y) + 1); }
     });
   }
 
@@ -275,9 +287,9 @@
     const sp = new THREE.Sprite(new THREE.SpriteMaterial({map: new THREE.CanvasTexture(c), depthTest: false})); sp.scale.set(1.6, 0.8, 1); return sp;
   }
   function person(key, X, Y){
-    const isGK = key === "GK", isUmp = key === "UMP", team = key[0];
-    const shirt = isGK ? 0x2ecc71 : isUmp ? 0x222222 : team === "R" ? 0xd62828 : 0xffffff;
-    const shorts = isGK ? 0xd62828 : isUmp ? 0x222222 : 0xffffff;
+    const isGK = key === "GK", isUmp = key === "UMP" || key === "COACH", team = key[0];
+    const shirt = isGK ? 0x2ecc71 : isUmp ? 0x222222 : team === "R" ? 0xd62828 : team === "B" ? 0x8fd3f4 : 0xffffff;
+    const shorts = isGK ? 0xd62828 : isUmp ? 0x222222 : team === "W" ? 0xffffff : 0x1b2a4a;
     const g = new THREE.Group();
     const add = (geo, color, y) => { const m = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({color})); m.position.y = y; m.castShadow = true; g.add(m); return m; };
     add(new THREE.CylinderGeometry(0.18, 0.14, 0.5, 12), isGK ? 0xd62828 : 0x1b1b1b, 0.25);
@@ -287,8 +299,8 @@
     if (!isUmp && !isGK){ const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.95, 8), new THREE.MeshLambertMaterial({color: 0x3a2a1a})); stick.position.set(0.3, 0.5, 0.15); stick.rotation.z = 0.35; g.add(stick); }
     const ring = new THREE.Mesh(new THREE.RingGeometry(0.5, 0.62, 32), new THREE.MeshBasicMaterial({color: shirt, side: THREE.DoubleSide, transparent: true, opacity: .8}));
     ring.rotation.x = -Math.PI/2; ring.position.y = 0.02; g.add(ring);
-    const white = team === "W" && !isGK && !isUmp;
-    const lb = label(isUmp ? "U" : key, white ? "#ffffff" : "#" + shirt.toString(16).padStart(6, "0"), white ? "#111" : "#fff"); lb.position.y = 2.25; g.add(lb);
+    const white = (team === "W" || team === "B") && !isGK && !isUmp;
+    const lb = label(key === "UMP" ? "U" : key === "COACH" ? "C" : key, white ? "#ffffff" : "#" + shirt.toString(16).padStart(6, "0"), white ? "#111" : "#fff"); lb.position.y = 2.25; g.add(lb);
     g.position.copy(toWorld(X, Y)); g.userData = {key}; g.traverse(o => { if (o.isMesh) { o.userData.key = key; pickables.push(o); } });
     people.add(g);
   }
@@ -377,13 +389,13 @@
   document.getElementById("dash").onclick = e => { dashed = !dashed; e.target.classList.toggle("on", dashed); if (selected && selected.shape != null){ drawings[selected.shape].dashed = dashed; drawBoard(); save(); } };
   function nextKey(t){ let i = 1; while (positions[t + i]) i++; return t + i; }
   function addPlayer(t){ const k = nextKey(t); const f = focus(); positions[k] = [Math.max(2, Math.min(L - 2, f[0] - 12 + Math.random() * 6)), Math.max(2, Math.min(W - 2, f[1] - 3 + Math.random() * 6))]; selected = {key: k}; drawBoard(); save(); }
-  document.getElementById("addR").onclick = () => addPlayer("R"); document.getElementById("addW").onclick = () => addPlayer("W");
+  document.getElementById("addR").onclick = () => addPlayer("R"); document.getElementById("addW").onclick = () => addPlayer("W"); document.getElementById("addB").onclick = () => addPlayer("B");
   function deleteSelected(){ if (!selected) return; if (selected.key && selected.key !== "BALL") delete positions[selected.key]; if (selected.shape != null) drawings.splice(selected.shape, 1); selected = null; drawBoard(); save(); }
   document.getElementById("del").onclick = deleteSelected;
   function undo(){ drawings.pop(); selected = null; drawBoard(); save(); }
   document.getElementById("undo").onclick = undo;
   document.getElementById("clear").onclick = () => { drawings = []; selected = null; drawBoard(); save(); };
-  document.getElementById("reset").onclick = () => { frames[cur] = {name: frames[cur].name, positions: copy(DEFAULT), drawings: []}; useFrame(cur); selected = null; drawBoard(); save(); };
+  document.getElementById("reset").onclick = () => { frames[cur] = {name: frames[cur].name, positions: copy(SCENES[sceneKey].positions), drawings: []}; useFrame(cur); selected = null; drawBoard(); save(); };
 
   function boardMetrics(){
     const dpr = Math.min(devicePixelRatio, 2), w = innerWidth, h = innerHeight;
@@ -457,7 +469,7 @@
   document.getElementById("fNext").onclick = () => showFrame(cur + 1);
   document.getElementById("fAdd").onclick = () => { // duplicate the current frame right after it
     const f = frames[cur], n = frames.length + 1; frames.splice(cur + 1, 0, {name: "Frame " + n, positions: copy(f.positions), drawings: copy(f.drawings)}); showFrame(cur + 1); };
-  document.getElementById("fDel").onclick = () => { if (frames.length === 1){ frames[0] = {name: "Frame 1", positions: copy(DEFAULT), drawings: []}; showFrame(0); return; } frames.splice(cur, 1); showFrame(Math.min(cur, frames.length - 1)); };
+  document.getElementById("fDel").onclick = () => { if (frames.length === 1){ frames[0] = {name: "Frame 1", positions: copy(SCENES[sceneKey].positions), drawings: []}; showFrame(0); return; } frames.splice(cur, 1); showFrame(Math.min(cur, frames.length - 1)); };
   function renameFrame(){ const b = tabs.children[cur]; if (!b) return; const inp = document.createElement("input"); inp.value = frames[cur].name; inp.setAttribute("aria-label", "frame name");
     b.replaceWith(inp); inp.focus(); inp.select();
     const done = () => { const v = inp.value.trim(); if (v) frames[cur].name = v; renderStrip(); save(); };
@@ -478,6 +490,10 @@
       const v = toWorld(a[0] + (b[0] - a[0]) * e, a[1] + (b[1] - a[1]) * e); o.position.x = v.x; o.position.z = v.z; });
     if (t >= 1){ const n = anim.next; anim = null; useFrame(n); build(); renderStrip(); setTimeout(() => { if (mode !== "board" && !anim) glide(n); }, 700); } }
   playBtn.onclick = () => anim ? stop() : play();
+  const sceneSel = document.getElementById("scene"); sceneSel.value = sceneKey;
+  function applyScene(){ document.getElementById("sub").textContent = SCENES[sceneKey].sub; renderStrip(); build(); if (mode !== "board") setOverview(); else drawBoard(); }
+  sceneSel.onchange = () => { if (anim) stop(); sceneKey = sceneSel.value; loadStored(); selected = null; applyScene(); save(); };
+  document.getElementById("sub").textContent = SCENES[sceneKey].sub;
   renderStrip();
 
   // ---------------------------------------------------------------- 3D loop
